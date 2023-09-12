@@ -1,2 +1,5 @@
 pytorch-lightning
 wandb
+nibabel
+matplotlib
+pandas
