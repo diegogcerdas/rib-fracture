@@ -24,7 +24,7 @@ def create_data_info_csv(data_root: str, csv_filename: str = "data_info.csv"):
                         [
                             os.path.join(folder_name, filename),
                             i,
-                            "val",
+                            "train" if "train" in folder_name else "val",
                             np.unique(labels[i]).tolist(),
                             slice.min(),
                             slice.max(),
