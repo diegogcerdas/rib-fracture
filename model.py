@@ -16,16 +16,16 @@ class UnetModule(pl.LightningModule):
 
         self.network = Unet(hparams.n_channels, hparams.n_classes)
 
-    def forward(self, x):  # TODO from LightningModule
+    def forward(self, x):
         return self.network(x)
 
-    def configure_optimizers(self):  # TODO from LightningModule
+    def configure_optimizers(self):
         optimizer = torch.optim.RMSprop(
             self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
         )
         return optimizer
 
-    def compute_loss(self, batch, mode):  # TODO created by us, used in training_step
+    def compute_loss(self, batch, mode):
         x, y = batch
         y_hat = self(x)
         loss = F.cross_entropy(y_hat, y) if self.n_classes > 1 else \
@@ -33,7 +33,7 @@ class UnetModule(pl.LightningModule):
         self.log_stat(f"{mode}_ce_loss", loss)
         return loss
 
-    def log_stat(self, name, stat):  # TODO created by us, used in compute_loss
+    def log_stat(self, name, stat):
         self.log(
             name,
             stat,
@@ -43,12 +43,12 @@ class UnetModule(pl.LightningModule):
             logger=True,
         )
 
-    def training_step(self, batch, batch_idx):  # TODO from LightningModule
+    def training_step(self, batch, batch_idx):
         loss = self.compute_loss(batch, "train")
         tensorboard_logs = {'train_loss': loss}
         return {'loss': loss, 'log': tensorboard_logs}
 
-    def validation_step(self, batch, batch_idx):  # TODO from LightningModule
+    def validation_step(self, batch, batch_idx):
         loss = self.compute_loss(batch, "val")
         return {'val_loss': loss}
 
