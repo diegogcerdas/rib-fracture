@@ -1,4 +1,5 @@
 import pytorch_lightning as pl
+import torch
 import torch.nn.functional as F
 from torch import nn, optim
 
@@ -7,20 +8,21 @@ class UnetModule(pl.LightningModule):
     """
     Based on https://github.com/hiepph/unet-lightning/blob/master/Unet.py
     """
-    def __init__(self, hparams):
+
+    def __init__(self, n_channels: int, learning_rate: float, weight_decay: float):
         super(UnetModule, self).__init__()
-        self.hparams = hparams
+        self.save_hyperparameters()
 
-        self.learning_rate = hparams.learning_rate  # lr=0.1
-        self.weight_decay = hparams.weight_decay  # weight_decay=1e-8
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
 
-        self.network = Unet(hparams.n_channels, hparams.n_classes)
+        self.network = Unet(n_channels)
 
     def forward(self, x):
         return self.network(x)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.RMSprop(
+        optimizer = optim.RMSprop(
             self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
         )
         return optimizer
@@ -28,9 +30,8 @@ class UnetModule(pl.LightningModule):
     def compute_loss(self, batch, mode):
         x, y = batch
         y_hat = self(x)
-        loss = F.cross_entropy(y_hat, y) if self.n_classes > 1 else \
-            F.binary_cross_entropy_with_logits(y_hat, y)
-        self.log_stat(f"{mode}_ce_loss", loss)
+        loss = F.binary_cross_entropy_with_logits(y_hat, y)
+        self.log_stat(f"{mode}_bce_loss", loss)
         return loss
 
     def log_stat(self, name, stat):
@@ -45,24 +46,16 @@ class UnetModule(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = self.compute_loss(batch, "train")
-        tensorboard_logs = {'train_loss': loss}
-        return {'loss': loss, 'log': tensorboard_logs}
+        return loss
 
     def validation_step(self, batch, batch_idx):
-        loss = self.compute_loss(batch, "val")
-        return {'val_loss': loss}
-
-    def validation_end(self, outputs):
-        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        tensorboard_logs = {'val_loss': avg_loss}
-        return {'avg_val_loss': avg_loss, 'log': tensorboard_logs}
+        _ = self.compute_loss(batch, "val")
 
 
 class Unet(nn.Module):
-    def __init__(self, n_channels, n_classes):
+    def __init__(self, n_channels):
         super(Unet, self).__init__()
         self.n_channels = n_channels
-        self.n_classes = n_classes
 
         def double_conv(in_channels, out_channels):
             return nn.Sequential(
@@ -76,8 +69,7 @@ class Unet(nn.Module):
 
         def down(in_channels, out_channels):
             return nn.Sequential(
-                nn.MaxPool2d(2),
-                double_conv(in_channels, out_channels)
+                nn.MaxPool2d(2), double_conv(in_channels, out_channels)
             )
 
         class up(nn.Module):
@@ -85,10 +77,13 @@ class Unet(nn.Module):
                 super().__init__()
 
                 if bilinear:
-                    self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+                    self.up = nn.Upsample(
+                        scale_factor=2, mode="bilinear", align_corners=True
+                    )
                 else:
-                    self.up = nn.ConvTranpose2d(in_channels // 2, in_channels // 2,
-                                                kernel_size=2, stride=2)
+                    self.up = nn.ConvTranpose2d(
+                        in_channels // 2, in_channels // 2, kernel_size=2, stride=2
+                    )
 
                 self.conv = double_conv(in_channels, out_channels)
 
@@ -98,9 +93,10 @@ class Unet(nn.Module):
                 diffY = x2.size()[2] - x1.size()[2]
                 diffX = x2.size()[3] - x1.size()[3]
 
-                x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
-                                diffY // 2, diffY - diffY // 2])
-                x = torch.cat([x2, x1], dim=1) ## why 1?
+                x1 = F.pad(
+                    x1, [diffX // 2, diffX - diffX // 2, diffY // 2, diffY - diffY // 2]
+                )
+                x = torch.cat([x2, x1], dim=1)  ## why 1?
                 return self.conv(x)
 
         self.inc = double_conv(self.n_channels, 64)
@@ -112,7 +108,7 @@ class Unet(nn.Module):
         self.up2 = up(512, 128)
         self.up3 = up(256, 64)
         self.up4 = up(128, 64)
-        self.out = nn.Conv2d(64, self.n_classes, kernel_size=1)
+        self.out = nn.Conv2d(64, 1, kernel_size=1)
 
     def forward(self, x):
         x1 = self.inc(x)

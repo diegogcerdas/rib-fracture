@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 @dataclass
 class ConfigTrain:
+    data_root: str
+    context_size: int
     seed: int
     learning_rate: float
     weight_decay: float

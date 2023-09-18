@@ -3,6 +3,7 @@ import os
 import nibabel as nib
 import numpy as np
 import pandas as pd
+import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 from tqdm import tqdm
@@ -11,6 +12,13 @@ from tqdm import tqdm
 def create_data_info_csv(data_root: str, csv_filename: str = "data_info.csv"):
     def process_folder(folder_name):
         data = []
+        set_ = (
+            "train"
+            if "train" in folder_name
+            else "val"
+            if "val" in folder_name
+            else "test"
+        )
         for filename in tqdm(
             os.listdir(os.path.join(data_root, folder_name)), desc=folder_name
         ):
@@ -24,7 +32,7 @@ def create_data_info_csv(data_root: str, csv_filename: str = "data_info.csv"):
                         [
                             os.path.join(folder_name, filename),
                             i,
-                            "train" if "train" in folder_name else "val",
+                            set_,
                             np.unique(labels[i]).tolist(),
                             slice.min(),
                             slice.max(),
@@ -48,22 +56,33 @@ def create_data_info_csv(data_root: str, csv_filename: str = "data_info.csv"):
         return df
 
     dfs = []
-    for folder in ["ribfrac-val-images"]:  # TODO: add train folders
+    for folder in ["ribfrac-train-images", "ribfrac-val-images", "ribfrac-test-images"]:
         dfs.append(process_folder(folder))
     df = pd.concat(dfs)
     df = df.sort_values(by=["set", "img_filename", "slice_idx"])
     df.to_csv(os.path.join(data_root, csv_filename), index=False)
+    return df
 
 
 class RibFracDataset(Dataset):
-    def __init__(self, data_root: str, train: bool = True):
+    def __init__(self, data_root: str, set: str, context_size: int = 0):
         super().__init__()
+        assert set in ["train", "val", "test"]
         self.data_root = data_root
-        self.df = pd.read_csv(os.path.join(data_root, "data_info.csv"))
-        self.df = self.df[self.df["set"] == ("train" if train else "val")]
+        self.set = set
+        self.context_size = context_size
+
+        data_info_path = os.path.join(data_root, "data_info.csv")
+        if os.path.exists(data_info_path):
+            self.df = pd.read_csv(data_info_path)
+        else:
+            self.df = create_data_info_csv(data_root)
+        self.df = self.df[self.df["set"] == set]
+        self.drop_slices_without_context()
+
         self.transform = transforms.Compose(
             [
-                transforms.ToTensor(),
+                # TODO: Define transforms / preprocessing
             ]
         )
 
@@ -73,4 +92,21 @@ class RibFracDataset(Dataset):
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
         proxy_img = nib.load(os.path.join(self.data_root, row["img_filename"]))
-        return proxy_img.dataobj[..., row["slice_idx"]].copy()
+        img = (
+            torch.from_numpy(proxy_img.dataobj[..., row["slice_idx"]].copy())
+            .float()
+            .unsqueeze(0)
+        )
+        proxy_mask = nib.load(
+            os.path.join(self.data_root, row["img_filename"]).replace("image", "label")
+        )
+        mask = (
+            torch.from_numpy(proxy_mask.dataobj[..., row["slice_idx"]].copy() > 0)
+            .float()
+            .unsqueeze(0)
+        )
+        img = self.transform(img)
+        return img, mask
+
+    def drop_slices_without_context(self):
+        None
