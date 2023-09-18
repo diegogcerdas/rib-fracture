@@ -83,6 +83,7 @@ class RibFracDataset(Dataset):
         self.transform = transforms.Compose(
             [
                 # TODO: Define transforms / preprocessing
+                # Beware: flips must be applied on both image and mask
             ]
         )
 
@@ -92,21 +93,44 @@ class RibFracDataset(Dataset):
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
         proxy_img = nib.load(os.path.join(self.data_root, row["img_filename"]))
-        img = (
-            torch.from_numpy(proxy_img.dataobj[..., row["slice_idx"]].copy())
-            .float()
-            .unsqueeze(0)
-        )
+        img = torch.from_numpy(
+            proxy_img.dataobj[
+                ...,
+                row["slice_idx"]
+                - self.context_size : row["slice_idx"]
+                + self.context_size
+                + 1,
+            ]
+            .copy()
+            .T
+        ).float()
         proxy_mask = nib.load(
             os.path.join(self.data_root, row["img_filename"]).replace("image", "label")
         )
         mask = (
-            torch.from_numpy(proxy_mask.dataobj[..., row["slice_idx"]].copy() > 0)
+            torch.from_numpy(proxy_mask.dataobj[..., row["slice_idx"]].copy().T != 0)
             .float()
             .unsqueeze(0)
         )
-        img = self.transform(img)
         return img, mask
 
     def drop_slices_without_context(self):
-        None
+        sizes = self.df.sort_values(by=["img_filename", "slice_idx"])
+        sizes = sizes.drop_duplicates(subset=["img_filename"], keep="last")
+        sizes = sizes[["img_filename", "slice_idx"]].values
+
+        for img_filename, size in sizes:
+            self.df.drop(
+                self.df[
+                    (self.df.img_filename == img_filename)
+                    & (self.df.slice_idx > (size - self.context_size))
+                ].index,
+                inplace=True,
+            )
+            self.df.drop(
+                self.df[
+                    (self.df.img_filename == img_filename)
+                    & (self.df.slice_idx < self.context_size)
+                ].index,
+                inplace=True,
+            )
