@@ -45,6 +45,7 @@ class RibFracDataset(Dataset):
         else:
             self.df = self.create_data_info_csv()
 
+        # TODO: Remove "val" once we can debug with trainset.
         if partition == "train" or partition == "val":
             self.drop_slices_without_ribs()
             self.drop_slices_without_context()
