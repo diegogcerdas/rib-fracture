@@ -63,6 +63,9 @@ wget -c "https://zenodo.org/record/3993380/files/ribfrac-test-images.zip?downloa
 echo "[INFO] Test Set - images DONE"
 
 
+# Extract .nii.gz files and gzip them to .nii
+find . -name '*.nii.gz' -exec sh -c 'gunzip -k "{}" && gzip "{}" -n' \;
+
 
 
 
