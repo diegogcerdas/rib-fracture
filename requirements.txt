@@ -7,4 +7,6 @@ torchvision
 numpy
 torch
 tqdm
+jupyter
 opencv-python
+seaborn
