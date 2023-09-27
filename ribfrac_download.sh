@@ -84,6 +84,8 @@ mv tmp_val_images/ribfrac-val-images/*.nii.gz val/
 mv tmp_test_images/ribfrac-test-images/*.nii.gz test/
 mv tmp_train_labels/Part*/*.nii.gz train/
 mv tmp_val_labels/ribfrac-val-labels/*.nii.gz train/
+cp download/ribfrac-train-info-*.csv train/
+cp download/ribfrac-val-info.csv val/
 
 # un-gzip .gz files
 gzip -d train/*.gz
