@@ -93,7 +93,7 @@ rmdir tmp_val_images/
 rmdir tmp_test_images/
 rm -rf download/  # optional, free space
 
-# un-gzip .gz files (optional)
-gzip -d train/*.gz
-gzip -d val/*.gz
-gzip -d test/*.gz
+# un-gzip .gz files (optional, need space)
+#gzip -d train/*.gz
+#gzip -d val/*.gz
+#gzip -d test/*.gz
