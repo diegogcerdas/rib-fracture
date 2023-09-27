@@ -93,6 +93,7 @@ gzip -d val/*.gz
 gzip -d test/*.gz
 
 # remove tmp folders
-rmdir tmp_train_images
-rmdir tmp_val_images
-rmdir tmp_test_images
+rmdir tmp_train_images/
+rmdir tmp_val_images/
+rmdir tmp_test_images/
+# rm -rf download/
