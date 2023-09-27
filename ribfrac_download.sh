@@ -87,13 +87,13 @@ mv tmp_val_labels/ribfrac-val-labels/*.nii.gz train/
 cp download/ribfrac-train-info-*.csv train/
 cp download/ribfrac-val-info.csv val/
 
-# un-gzip .gz files
-gzip -d train/*.gz
-gzip -d val/*.gz
-gzip -d test/*.gz
-
-# remove tmp folders
+# clean
 rmdir tmp_train_images/
 rmdir tmp_val_images/
 rmdir tmp_test_images/
-# rm -rf download/
+rm -rf download/  # optional, free space
+
+# un-gzip .gz files (optional)
+gzip -d train/*.gz
+gzip -d val/*.gz
+gzip -d test/*.gz
