@@ -1,6 +1,8 @@
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
+import torchvision.transforms as transforms
 from torch import nn, optim
 
 
@@ -34,6 +36,48 @@ class UnetModule(pl.LightningModule):
         self.log_stat(f"{mode}_bce_loss", loss)
         return loss
 
+    def compute_eval(self, batch, mode):
+        patches, masks, ps, sts = batch
+        masks = masks.squeeze()
+        bs, num_patches = patches.shape[:2]
+        num_patches_sqrt = int(np.sqrt(num_patches))
+        img_side = masks.shape[-1]
+        patch_original_size = ps[0].item()
+        stride = sts[0].item()
+        p = patch_original_size // 2
+        resize = transforms.Resize(patch_original_size, antialias=True)
+
+        recon = torch.zeros((bs, img_side + 2 * p, img_side + 2 * p))
+        recon_sum = torch.zeros((bs, img_side + 2 * p, img_side + 2 * p))
+
+        for i in range(num_patches):
+            patch = patches[:, i]
+            patch = resize(self(patch)).squeeze()
+            ix, iy = np.unravel_index(i, (num_patches_sqrt, num_patches_sqrt))
+            ix = (ix * stride) + p
+            iy = (iy * stride) + p
+            recon[
+                :,
+                ix - p : ix + p,
+                iy - p : iy + p,
+            ] += patch
+            recon_sum[
+                :,
+                ix - p : ix + p,
+                iy - p : iy + p,
+            ] += 1
+        recon /= recon_sum
+        recon = recon[:, p:-p, p:-p]
+
+        thresholds = np.linspace(0, 1, 11)
+        smooth = 1e-6
+        for threshold in thresholds:
+            pred = (recon > threshold).float()
+            dice = (2 * (pred * masks).sum() + smooth) / (
+                pred.sum() + masks.sum() + smooth
+            )
+            self.log_stat(f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice)
+
     def log_stat(self, name, stat):
         self.log(
             name,
@@ -49,7 +93,7 @@ class UnetModule(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        _ = self.compute_loss(batch, "val")
+        _ = self.compute_eval(batch, "val")
 
 
 class Unet(nn.Module):

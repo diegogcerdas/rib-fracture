@@ -5,6 +5,7 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler
 from torchvision import transforms
@@ -23,6 +24,7 @@ class RibFracDataset(Dataset):
         level: int = 400,
         window: int = 1800,
         threshold: float = 0.35,
+        test_stride: int = 1,
         force_data_info: bool = False,
         debug: bool = False,
     ):
@@ -36,6 +38,7 @@ class RibFracDataset(Dataset):
         self.level = level
         self.window = window
         self.threshold = threshold
+        self.test_stride = test_stride
         self.debug = debug
 
         # Compute a DataFrame of all available slices
@@ -44,28 +47,31 @@ class RibFracDataset(Dataset):
             self.df = pd.read_csv(self.data_info_path)
         else:
             self.df = self.create_data_info_csv()
+        self.drop_slices_without_context()
 
-        # TODO: Remove "val" once we can debug with trainset.
-        if partition == "train" or partition == "val":
+        if partition == "train":
             self.drop_slices_without_ribs()
-            self.drop_slices_without_context()
             self.repeat_slices_with_fracture()
             self.add_df_index()
 
-        self.transform = transforms.Compose(
-            [
-                transforms.Resize(patch_final_size, antialias=True),
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomVerticalFlip(),
-            ]
-        )
+        if partition == "train":
+            self.transform = transforms.Compose(
+                [
+                    transforms.Resize(patch_final_size, antialias=True),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                ]
+            )
+        else:
+            self.transform = transforms.Compose(
+                [transforms.Resize(patch_final_size, antialias=True)]
+            )
 
     def __len__(self):
         return self.df.shape[0]
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-        is_fracture_slice = row["is_fracture_slice"]
 
         # Load image slice
         proxy_img = nib.load(os.path.join(self.root_dir, row["img_filename"]))
@@ -94,31 +100,37 @@ class RibFracDataset(Dataset):
             .float()
             .unsqueeze(0)
         )
-        mask = torch.nn.functional.pad(mask, (p, p, p, p), mode="constant", value=0)
 
-        # Extract patch and transform
-        img_patch, mask_patch, random_coord = self.create_patch(
-            img, mask, is_fracture_slice
-        )
-        patch = self.transform(torch.cat([img_patch, mask_patch], dim=0))
-        img_patch, mask_patch = patch[:img_channels], patch[-1:]
-
-        if self.debug:
-            return (
-                img_patch,
-                mask_patch,
-                random_coord,
-                img,
-                mask,
-                row["img_filename"],
-                row["slice_idx"],
-                is_fracture_slice,
+        if self.partition == "train":
+            is_fracture_slice = row["is_fracture_slice"]
+            mask = torch.nn.functional.pad(mask, (p, p, p, p), mode="constant", value=0)
+            img_patch, mask_patch, random_coord = self.create_patch(
+                img, mask, is_fracture_slice
             )
+            patch = self.transform(torch.cat([img_patch, mask_patch], dim=0))
+            img_patch, mask_patch = patch[:img_channels], patch[-1:]
 
-        return img_patch, mask_patch
+            if self.debug:
+                return (
+                    img_patch,
+                    mask_patch,
+                    random_coord,
+                    img,
+                    mask,
+                    row["img_filename"],
+                    row["slice_idx"],
+                    is_fracture_slice,
+                )
+
+            return img_patch, mask_patch
+
+        else:
+            patches = self.create_patch(img, mask)
+            patches = self.transform(patches)
+            return patches, mask, self.patch_original_size, self.test_stride
 
     # TODO: Remove backplate of CT scan
-    def create_patch(self, img, mask, is_fracture_slice):
+    def create_patch(self, img, mask, is_fracture_slice=None):
         """Create a patch from the image and mask slices."""
 
         def crop(center_coord):
@@ -142,28 +154,39 @@ class RibFracDataset(Dataset):
             ]
             return img_patch, mask_patch
 
-        # Get middle slice index
-        middle = self.context_size
-        # Get all bone pixel locations
-        coords = torch.stack(torch.where(img[middle] > 0), dim=1)
+        if self.partition == "train":
+            # Get middle slice index
+            middle = self.context_size
+            # Get all bone pixel locations
+            coords = torch.stack(torch.where(img[middle] > 0), dim=1)
 
-        if is_fracture_slice:
-            # Look for patch with sufficient fracture pixels
-            for random_coord in np.random.permutation(coords):
-                img_patch, mask_patch = crop(random_coord)
-                if (
-                    torch.sum(mask_patch) / mask_patch.numel()
-                    > self.proportion_fracture_in_patch
-                ):
-                    break
+            if is_fracture_slice:
+                # Look for patch with sufficient fracture pixels
+                for random_coord in np.random.permutation(coords):
+                    img_patch, mask_patch = crop(random_coord)
+                    if (
+                        torch.sum(mask_patch) / mask_patch.numel()
+                        > self.proportion_fracture_in_patch
+                    ):
+                        break
+            else:
+                # Look for patch with no fracture pixels
+                for random_coord in np.random.permutation(coords):
+                    img_patch, mask_patch = crop(random_coord)
+                    if torch.sum(mask_patch) == 0:
+                        break
+
+            return img_patch, mask_patch, random_coord
+
         else:
-            # Look for patch with no fracture pixels
-            for random_coord in np.random.permutation(coords):
-                img_patch, mask_patch = crop(random_coord)
-                if torch.sum(mask_patch) == 0:
-                    break
-
-        return img_patch, mask_patch, random_coord
+            chs = img.shape[0]
+            ks = self.patch_original_size + (
+                1 if self.patch_original_size % 2 == 0 else 0
+            )
+            patches = F.unfold(img, kernel_size=ks, stride=self.test_stride)
+            patches = patches.reshape(chs, ks, ks, -1)
+            patches = patches.permute(3, 0, 1, 2)
+            return patches
 
     # TODO: Integrate with drop_slices_without_ribs
     def drop_slices_without_context(self):
