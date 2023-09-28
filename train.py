@@ -16,26 +16,27 @@ if __name__ == "__main__":
 
     # Data Parameters
     parser.add_argument("--data-root", type=str, default="./data/", help="Root directory for data.")
-    parser.add_argument("--patch-original-size", type=int, default=24, help="Size of the patches extracted from original images.")
+    parser.add_argument("--patch-original-size", type=int, default=40, help="Size of the patches extracted from original images.")
     parser.add_argument("--patch-final-size", type=int, default=256, help="Size of the patches after resizing.")
     parser.add_argument("--proportion-fracture-in-patch", type=float, default=0.25, help="Proportion of fracture pixels in a patch.")
     parser.add_argument("--level", type=int, default=400, help="Level of the WSI to use.")
     parser.add_argument("--window", type=int, default=1800, help= "Window size of the WSI to use.")
     parser.add_argument("--threshold", type=int, default=0.35, help="Threshold to use for bone binarization.")
-    parser.add_argument("--test-stride", type=int, default=12, help="Stride for test/val patches.")
+    parser.add_argument("--test-stride", type=int, default=20, help="Stride for test/val patches.")
     parser.add_argument(
         "--force-data-info", action=BooleanOptionalAction, default=False, help="Force data info generation."
     )
 
     # Model Parameters
-    parser.add_argument("--context-size", type=int, default=0, help="Number of slices above and below the middle slice.")
+    parser.add_argument("--context-size", type=int, default=10, help="Number of slices above and below the middle slice.")
 
     # Training Parameters
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-5)
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--num-workers", type=int, default=8)
+    parser.add_argument("--batch-size-train", type=int, default=64)
+    parser.add_argument("--batch-size-test", type=int, default=8)
+    parser.add_argument("--num-workers", type=int, default=18)
     parser.add_argument("--max-epochs", type=int, default=1000)
     parser.add_argument(
         "--device",
@@ -46,6 +47,7 @@ if __name__ == "__main__":
     )
 
     # WandB Parameters
+    parser.add_argument("--do-wandb", action=BooleanOptionalAction, default=False)
     parser.add_argument("--wandb-name", type=str, default="test-run")
     parser.add_argument("--wandb-project", type=str, default="rib-frac")
     parser.add_argument("--wandb-entity", type=str, default="diego-gcerdas")
@@ -72,7 +74,7 @@ if __name__ == "__main__":
     train_loader = data.DataLoader(
         train_set,
         sampler=sampler,
-        batch_size=cfg.batch_size,
+        batch_size=cfg.batch_size_train,
         drop_last=True,
         pin_memory=True,
         num_workers=cfg.num_workers,
@@ -93,7 +95,7 @@ if __name__ == "__main__":
     )
     val_loader = data.DataLoader(
         val_set,
-        batch_size=cfg.batch_size,
+        batch_size=cfg.batch_size_test,
         shuffle=False,
         drop_last=False,
         num_workers=cfg.num_workers,
@@ -105,15 +107,18 @@ if __name__ == "__main__":
         weight_decay=cfg.weight_decay,
     )
 
-    wandb.init(
-        name=cfg.wandb_name,
-        project=cfg.wandb_project,
-        entity=cfg.wandb_entity,
-        mode=cfg.wandb_mode,
-    )
-    wandb_logger = WandbLogger()
-    logger = [wandb_logger]
+    logger = []
     callbacks = [SetEpochCallback(sampler)]
+
+    if cfg.do_wandb:
+        wandb.init(
+            name=cfg.wandb_name,
+            project=cfg.wandb_project,
+            entity=cfg.wandb_entity,
+            mode=cfg.wandb_mode,
+        )
+        wandb_logger = WandbLogger()
+        logger.append(wandb_logger)
 
     trainer = pl.Trainer(
         accelerator="gpu" if str(cfg.device).startswith("cuda") else "cpu",

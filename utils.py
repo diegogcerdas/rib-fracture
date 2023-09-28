@@ -21,10 +21,12 @@ class ConfigTrain:
     seed: int
     learning_rate: float
     weight_decay: float
-    batch_size: int
+    batch_size_train: int
+    batch_size_test: int
     num_workers: int
     max_epochs: int
     device: str
+    do_wandb: bool
     wandb_name: str
     wandb_project: str
     wandb_entity: str
