@@ -52,6 +52,7 @@ class UnetModule(pl.LightningModule):
 
         for i in range(num_patches):
             patch = patches[:, i]
+            # TODO: if no bone pixels, return a zero-mask
             patch = resize(self(patch)).squeeze()
             ix, iy = np.unravel_index(i, (num_patches_sqrt, num_patches_sqrt))
             ix = (ix * stride) + p
