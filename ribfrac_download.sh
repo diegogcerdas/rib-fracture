@@ -60,17 +60,17 @@ wget -c "https://zenodo.org/record/3893508/files/ribfrac-train-images-1.zip?down
 echo "[INFO] Training Set Part 1 - images DONE"
 
 # test-images (17.9 GB)
-wget -c "https://zenodo.org/record/3993380/files/ribfrac-test-images.zip?download=1" -O "download/ribfrac-test-images.zip"
-echo "[INFO] Test Set - images DONE"
+#wget -c "https://zenodo.org/record/3993380/files/ribfrac-test-images.zip?download=1" -O "download/ribfrac-test-images.zip"
+#echo "[INFO] Test Set - images DONE"
 
 # unzip .zip downloaded files
 mkdir -p tmp_train_images
 mkdir -p tmp_val_images
-mkdir -p tmp_test_images
+#mkdir -p tmp_test_images
 unzip download/ribfrac-train-images-1.zip -d tmp_train_images
 unzip download/ribfrac-train-images-2.zip -d tmp_train_images
 unzip download/ribfrac-val-images.zip -d tmp_val_images
-unzip download/ribfrac-test-images.zip -d tmp_test_images
+#unzip download/ribfrac-test-images.zip -d tmp_test_images
 unzip download/ribfrac-train-labels-1.zip -d tmp_train_labels
 unzip download/ribfrac-train-labels-2.zip -d tmp_train_labels
 unzip download/ribfrac-val-labels.zip -d tmp_val_labels
@@ -78,22 +78,20 @@ unzip download/ribfrac-val-labels.zip -d tmp_val_labels
 # move files to train, val, test
 mkdir -p train
 mkdir -p val
-mkdir -p test
+#mkdir -p test
 mv tmp_train_images/Part*/*.nii.gz train/
 mv tmp_val_images/ribfrac-val-images/*.nii.gz val/
-mv tmp_test_images/ribfrac-test-images/*.nii.gz test/
+#mv tmp_test_images/ribfrac-test-images/*.nii.gz test/
 mv tmp_train_labels/Part*/*.nii.gz train/
-mv tmp_val_labels/ribfrac-val-labels/*.nii.gz val/
+mv tmp_val_labels/ribfrac-val-labels/*.nii.gz train/
 cp download/ribfrac-train-info-*.csv train/
 cp download/ribfrac-val-info.csv val/
 
 # clean
-rmdir tmp_train_images/
-rmdir tmp_val_images/
-rmdir tmp_test_images/
-rm -rf download/  # optional, free space
+rm -r tmp_*
+rm -r download/  # optional, free space
 
 # un-gzip .gz files (optional, need space)
-#gzip -d train/*.gz
-#gzip -d val/*.gz
+gzip -d train/*.gz
+gzip -d val/*.gz
 #gzip -d test/*.gz
