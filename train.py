@@ -15,20 +15,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # Data Parameters
-    parser.add_argument("--data-root", type=str, default="./data/")
-    parser.add_argument("--patch-original-size", type=int, default=24)
-    parser.add_argument("--patch-final-size", type=int, default=256)
-    parser.add_argument("--proportion-fracture-in-patch", type=float, default=0.25)
-    parser.add_argument("--level", type=int, default=400)
-    parser.add_argument("--window", type=int, default=1800)
-    parser.add_argument("--threshold", type=int, default=0.35)
-    parser.add_argument("--test-stride", type=int, default=12)
+    parser.add_argument("--data-root", type=str, default="./data/", help="Root directory for data.")
+    parser.add_argument("--patch-original-size", type=int, default=24, help="Size of the patches extracted from original images.")
+    parser.add_argument("--patch-final-size", type=int, default=256, help="Size of the patches after resizing.")
+    parser.add_argument("--proportion-fracture-in-patch", type=float, default=0.25, help="Proportion of fracture pixels in a patch.")
+    parser.add_argument("--level", type=int, default=400, help="Level of the WSI to use.")
+    parser.add_argument("--window", type=int, default=1800, help= "Window size of the WSI to use.")
+    parser.add_argument("--threshold", type=int, default=0.35, help="Threshold to use for bone binarization.")
+    parser.add_argument("--test-stride", type=int, default=12, help="Stride for test/val patches.")
     parser.add_argument(
-        "--force-data-info", action=BooleanOptionalAction, default=False
+        "--force-data-info", action=BooleanOptionalAction, default=False, help="Force data info generation."
     )
 
     # Model Parameters
-    parser.add_argument("--context-size", type=int, default=0)
+    parser.add_argument("--context-size", type=int, default=0, help="Number of slices above and below the middle slice.")
 
     # Training Parameters
     parser.add_argument("--seed", type=int, default=42)
