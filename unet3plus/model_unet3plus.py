@@ -99,6 +99,9 @@ class unetConv2(nn.Module):
     
     
 class Unet3Plus(nn.Module):
+    """
+    Based on https://github.com/ZJUGiveLab/UNet-Version/blob/master/models/UNet_3Plus.py
+    """
 
     def __init__(self, n_channels, is_deconv=True, is_batchnorm=True):
         super(Unet3Plus, self).__init__()
