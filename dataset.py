@@ -56,6 +56,8 @@ class RibFracDataset(Dataset):
             self.repeat_slices_with_fracture()
             self.add_df_index()
         else:
+            self.img_size, self.num_patches = self.compute_img_size_and_num_patches()
+            self.create_local_pred_masks()
             self.drop_slices_without_context()
 
         # Set up transforms
@@ -78,35 +80,13 @@ class RibFracDataset(Dataset):
         return self.df.shape[0]
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
-
-        # Load whole image slice
-        proxy_img = nib.load(os.path.join(self.root_dir, row["img_filename"]))
-        img = torch.from_numpy(
-            proxy_img.dataobj[
-                ...,
-                row["slice_idx"]
-                - self.context_size : row["slice_idx"]
-                + self.context_size
-                + 1,
-            ]
-            .copy()
-            .T
-        ).float()
-        img = self.preprocess(img)
-
-        # Load whole mask slice
-        proxy_mask = nib.load(
-            os.path.join(self.root_dir, row["img_filename"]).replace("image", "label")
-        )
-        mask = (
-            torch.from_numpy(proxy_mask.dataobj[..., row["slice_idx"]].copy().T != 0)
-            .float()
-            .unsqueeze(0)
-        )
-
+        
         # If training, create a random patch from the image and mask slices
         if self.partition == "train":
+            row = self.df.iloc[idx]
+            # Load image and mask slices
+            img = self.load_img(row["img_filename"], row["slice_idx"])
+            mask = self.load_mask(row["img_filename"], row["slice_idx"])
             is_fracture_slice = row["is_fracture_slice"]
             # Pad mask to allow for patches on the edge
             p = self.patch_original_size // 2
@@ -136,11 +116,74 @@ class RibFracDataset(Dataset):
 
         # If validation or test, create patches from a predetermined coordinate
         else:
-            coord = row['coord']
+            # Divide index into row and patch indices
+            row_idx = int(idx // self.num_patches)
+            patch_idx = int(idx - (row_idx * self.num_patches))
+            # Compute patch coordinates
+            row = self.df.iloc[row_idx]
+            p = self.patch_original_size // 2
+            num_patches_sqrt = int(np.sqrt(self.num_patches))
+            ix, iy = np.unravel_index(patch_idx, (num_patches_sqrt, num_patches_sqrt))
+            ix = (ix * self.test_stride) + p
+            iy = (iy * self.test_stride) + p
+            coord = (ix, iy)
+            # Load image and mask slices
+            img = self.load_img(row["img_filename"], row["slice_idx"])
+            # Create patch
             img_patch = crop_patch(img, coord, self.patch_original_size)
-            img_patch = self.normalize(patch)
-            img_patch = self.transform(patch)
-            return img_patch, self.patch_original_size, self.test_stride
+            # Normalize and transform image patch
+            img_patch = self.normalize(img_patch)
+            img_patch = self.transform(img_patch)
+            return img_patch, coord, self.patch_original_size, img
+        
+    def load_img(self, img_filename, slice_idx):
+        # Load whole image slice
+        proxy_img = nib.load(os.path.join(self.root_dir, img_filename))
+        img = torch.from_numpy(
+            proxy_img.dataobj[
+                ...,
+                slice_idx
+                - self.context_size : slice_idx
+                + self.context_size
+                + 1,
+            ]
+            .copy()
+            .T
+        ).float()
+        img = self.preprocess(img)
+        return img
+    
+    def load_mask(self, img_filename, slice_idx):
+        # Load whole mask slice
+        proxy_mask = nib.load(
+            os.path.join(self.root_dir, img_filename).replace("image", "label")
+        )
+        mask = (
+            torch.from_numpy(proxy_mask.dataobj[..., slice_idx].copy().T != 0)
+            .float()
+            .unsqueeze(0)
+        )
+        return mask
+    
+    def preprocess(self, img):
+        """Preprocess image slice."""
+
+        # Clip values
+        max_val = self.level + self.window / 2
+        min_val = self.level - self.window / 2
+        img = img.clip(min_val, max_val)
+
+        # Rescale values
+        img = (img - img.min()) / (img.max() - img.min())
+
+        # Threshold
+        img[img <= self.threshold] = 0
+
+        # Pad image to allow for patches on the edge
+        p = self.patch_original_size // 2
+        img = torch.nn.functional.pad(img, (p, p, p, p), mode="constant", value=0)
+
+        return img
 
     # TODO: Remove backplate of CT scan
     def create_train_patch(self, img, mask, is_fracture_slice):
@@ -222,22 +265,27 @@ class RibFracDataset(Dataset):
         self.df = self.df.reset_index(drop=True)
         self.df["df_index"] = np.arange(len(self.df))
 
-    def preprocess(self, img):
-        """Preprocess image slice."""
+    def create_local_pred_masks(self):
+        sizes = self.df.sort_values(by=["img_filename", "slice_idx"])
+        sizes = sizes.drop_duplicates(subset=["img_filename"], keep="last")
+        sizes = sizes[["img_filename", "slice_idx"]].values
 
-        # Clip values
-        max_val = self.level + self.window / 2
-        min_val = self.level - self.window / 2
-        img = img.clip(min_val, max_val)
+        pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
+        os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
-        # Threshold
-        img[img <= self.threshold] = 0
+        for img_filename, size in tqdm(sizes, desc="Creating local prediction masks"):
+            filename = os.path.basename(img_filename).replace("image", "pred_mask").replace(".nii", ".npy")
+            if os.path.exists(os.path.join(pred_dir, filename)):
+                continue
+            s = self.img_size + 2 * (self.patch_original_size // 2)
+            pred_mask = np.zeros((s, s, size)).astype(np.float16)
+            np.save(os.path.join(pred_dir, filename), pred_mask)
 
-        # Pad image to allow for patches on the edge
-        p = self.patch_original_size // 2
-        img = torch.nn.functional.pad(img, (p, p, p, p), mode="constant", value=0)
-
-        return img
+    def compute_img_size_and_num_patches(self):
+        filename = os.path.join(self.root_dir, self.df.iloc[0]["img_filename"])
+        img_size = nib.load(filename).get_fdata().shape[0]
+        num_patches = np.floor((img_size / self.test_stride) + 1) ** 2
+        return img_size, num_patches
 
     def create_data_info_csv(self):
         """Create a DataFrame with all available slices for this specific partition."""
@@ -285,8 +333,11 @@ class RibFracDataset(Dataset):
         print("Done!")
         return df
 
-    def get_sampler(self, seed):
+    def get_train_sampler(self, seed):
         return BalancedFractureSampler(self.df, seed)
+    
+    def get_test_sampler(self):
+        return TestSampler(self.df, self.num_patches)
 
 
 class BalancedFractureSampler(Sampler):
@@ -326,6 +377,26 @@ class BalancedFractureSampler(Sampler):
             idx_list.append(fracture_slice_idx[i])
             idx_list.append(non_fracture_slice_idx[i])
 
+        return iter(idx_list)
+    
+
+class TestSampler(Sampler):
+
+    def __init__(self, data_info: pd.DataFrame, num_patches: int):
+        self.data_info = data_info
+        self.num_patches = num_patches
+
+    def __len__(self):
+        return self.data_info.shape[0]
+
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+
+    def __iter__(self):
+        idx_list = []
+        patch_idx = np.arange(self.num_patches)
+        for i in range(len(self.data_info)):
+            idx_list += (patch_idx + i * self.num_patches).astype(int).tolist()
         return iter(idx_list)
     
 
