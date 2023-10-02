@@ -14,9 +14,6 @@
 #
 #####
 
-#LOGFILE="ribfrac_download_$(date +'%Y%m%dT%H%M%S').log"
-#touch $LOGFILE
-
 mkdir -p data/ribfrac
 cd data/ribfrac
 
@@ -33,6 +30,7 @@ echo "[INFO] Training Set Part 2 - info DONE"
 # val-info (8.1 kB)
 wget -c "https://zenodo.org/record/3893496/files/ribfrac-val-info.csv?download=1" -O "download/ribfrac-val-info.csv"
 echo "[INFO] Tuning/Validation Set - info DONE"
+
 
 # train1-labels (7.9 MB)
 wget -c "https://zenodo.org/record/3893508/files/ribfrac-train-labels-1.zip?download=1" -O "download/ribfrac-train-labels-1.zip"
@@ -63,35 +61,29 @@ echo "[INFO] Training Set Part 1 - images DONE"
 #wget -c "https://zenodo.org/record/3993380/files/ribfrac-test-images.zip?download=1" -O "download/ribfrac-test-images.zip"
 #echo "[INFO] Test Set - images DONE"
 
-# unzip .zip downloaded files
+
 mkdir -p tmp_train_images
-mkdir -p tmp_val_images
-#mkdir -p tmp_test_images
+mkdir -p tmp_train_labels
 unzip download/ribfrac-train-images-1.zip -d tmp_train_images
 unzip download/ribfrac-train-images-2.zip -d tmp_train_images
-unzip download/ribfrac-val-images.zip -d tmp_val_images
-#unzip download/ribfrac-test-images.zip -d tmp_test_images
 unzip download/ribfrac-train-labels-1.zip -d tmp_train_labels
 unzip download/ribfrac-train-labels-2.zip -d tmp_train_labels
-unzip download/ribfrac-val-labels.zip -d tmp_val_labels
+unzip download/ribfrac-val-images.zip -d .
+unzip download/ribfrac-val-labels.zip -d .
+#unzip download/ribfrac-test-images.zip -d .
 
-# move files to train, val, test
-mkdir -p train
-mkdir -p val
-#mkdir -p test
-mv tmp_train_images/Part*/*.nii.gz train/
-mv tmp_val_images/ribfrac-val-images/*.nii.gz val/
-#mv tmp_test_images/ribfrac-test-images/*.nii.gz test/
-mv tmp_train_labels/Part*/*.nii.gz train/
-mv tmp_val_labels/ribfrac-val-labels/*.nii.gz val/
-cp download/ribfrac-train-info-*.csv train/
-cp download/ribfrac-val-info.csv val/
+mkdir -p ribfrac-train-images
+mkdir -p ribfrac-train-labels
+mv tmp_train_images/Part*/*.nii.gz ribfrac-train-images/
+mv tmp_train_labels/Part*/*.nii.gz ribfrac-train-labels/
 
-# clean
-rm -r tmp_*
+awk '(NR == 1) || (FNR > 1)' download/ribfrac-train-info-*.csv > ribfrac-train-info.csv  # merge csv files
+cp download/ribfrac-train-info-*.csv .  # TODO: remove code that uses info-1.csv and info-2.csv instead of info.csv
+cp download/ribfrac-val-info.csv .
+
+rmdir tmp_train_*/Part*
+rmdir tmp_train_*
 rm -r download/  # optional, free space
 
-# un-gzip .gz files (optional, need space)
-gzip -d train/*.gz
-gzip -d val/*.gz
-#gzip -d test/*.gz
+gzip -d ribfrac-*-images/*.gz
+gzip -d ribfrac-*-labels/*.gz

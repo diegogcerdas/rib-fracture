@@ -42,15 +42,11 @@ LABEL_CODE = {
 }
 
 
-def compute_rib_data(train_folder_path):
+
+def compute_rib_data(info_paths: list):
     rib_data = defaultdict(list)
 
-    info_files = [
-        os.path.join(train_folder_path, 'ribfrac-train-info-1.csv'),
-        os.path.join(train_folder_path, 'ribfrac-train-info-2.csv'),
-        #os.path.join(val_folder_path, 'ribfrac-val-info.csv')
-    ]
-    for info_file in info_files:
+    for info_file in info_paths:
         for index, row in pd.read_csv(info_file).iterrows():
             public_id, label_id, label_code = row
             rib_data[public_id].append(label_code)
@@ -98,9 +94,9 @@ def _center_of_mass(scan) -> tuple:
 
 # analysis: fractures
 
-def fracture_label_analysis(train_folder_path, rib_data):
+def fracture_label_analysis(labels_path, rib_data):
     """
-    Produces 2 dataframes with the following information:
+    Processes train labels and produces 2 dataframes with the following information:
 
     df_scan:
         public_id: id of the scan (e.g. 'RibFrac100')
@@ -152,12 +148,13 @@ def fracture_label_analysis(train_folder_path, rib_data):
     scan_data = []
     frac_data = []
 
-    for filename in tqdm(os.listdir(train_folder_path)[2:], desc='analyzing train data'):
+    for filename in tqdm(os.listdir(labels_path)[2:], desc='analyzing train data'):
 
         if not (filename.endswith("label.nii.gz") or filename.endswith("label.nii")):
+            print('WARNING: Directory structure is not as expected. Ignoring file', filename)
             continue
 
-        filepath = os.path.join(train_folder_path, filename)
+        filepath = os.path.join(labels_path, filename)
         label_scan = nib.load(filepath).get_fdata().T.astype(int)
         
         public_id = filename.split('-')[0]
@@ -417,25 +414,26 @@ def equalize_per_slice(scan):
 
 # analysis: pixel values
 
-def analysis_pixel_values(train_folder_path, fn_preprocess):
+def analysis_pixel_values(images_path, fn_preprocess):
     """
-    Accumulates all scans in the train folder after preprocessing them with fn_preprocess
+    Accumulates all scans in the (train) images folder after preprocessing them with fn_preprocess
 
     Args:
-        train_folder_path: path to the train folder
+        images_path: path to the (train) images folder
         fn_preprocess: function that takes a scan and returns the scan preprocessed. It must return a binary boolean array with coords (z, x, y)
     """
     max_num_slices = 721  # hardcoded from df_scan.describe()>size_z>max
 
     cum_scans = np.zeros((max_num_slices, 512, 512))
 
-    for filename in tqdm(os.listdir(train_folder_path)[2:], desc='overlaping slices'):
+    for filename in tqdm(os.listdir(images_path)[2:], desc='overlaping slices'):
 
         if not (filename.endswith("image.nii.gz") or filename.endswith("image.nii")):
+            print('WARNING: Directory structure is not as expected. Ignoring file', filename)
             continue
 
         # read scan
-        filepath = os.path.join(train_folder_path, filename)
+        filepath = os.path.join(images_path, filename)
         raw_scan = nib.load(filepath).get_fdata().T.astype(float)
 
         # threshold scan

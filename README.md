@@ -12,12 +12,15 @@ pip install -r ~/rib-fracture/requirements.txt
 
 Please create a folder `data` inside the repo folder, with the following structure:
 ```
-- data 
-|-- ribfrac-train-images
-|-- ribfrac-train-labels
-|-- ribfrac-val-images
-|-- ribfrac-val-labels
-|-- ribfrac-test-images
+- data/
+|-- ribfrac/
+    |-- ribfrac-train-images/
+    |-- ribfrac-train-labels/
+    |-- ribfrac-val-images/
+    |-- ribfrac-val-labels/
+    |-- ribfrac-test-images/
+    |-- ribfrac-train-info.csv
+    |-- ribfrac-val-info.csv
 ```
 
 Each subfolder should contain the corresponding `.nii` files.
