@@ -6,9 +6,8 @@ from torch.nn import init
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch import nn, optim
-from init_weights import init_weights
-from loss import BCE_loss, IOU_loss, MSSSIM
-
+from unet3plus.init_weights import init_weights
+from unet3plus.loss import BCE_loss, IOU_loss, MSSSIM
 
 class Unet3PlusModule(pl.LightningModule):
     def __init__(self, n_channels: int, learning_rate: float, weight_decay: float):
@@ -38,8 +37,47 @@ class Unet3PlusModule(pl.LightningModule):
         return loss
 
     def compute_eval(self, batch, mode):
-        # Your evaluation code here
-        pass
+        patches, masks, ps, sts = batch
+        masks = masks.squeeze()
+        bs, num_patches = patches.shape[:2]
+        num_patches_sqrt = int(np.sqrt(num_patches))
+        img_side = masks.shape[-1]
+        patch_original_size = ps[0].item()
+        stride = sts[0].item()
+        p = patch_original_size // 2
+        resize = transforms.Resize(patch_original_size, antialias=True)
+
+        recon = torch.zeros((bs, img_side + 2 * p, img_side + 2 * p))
+        recon_sum = torch.zeros((bs, img_side + 2 * p, img_side + 2 * p))
+
+        for i in range(num_patches):
+            patch = patches[:, i]
+            # TODO: if no bone pixels, return a zero-mask
+            patch = resize(self(patch)).squeeze()
+            ix, iy = np.unravel_index(i, (num_patches_sqrt, num_patches_sqrt))
+            ix = (ix * stride) + p
+            iy = (iy * stride) + p
+            recon[
+                :,
+                ix - p : ix + p,
+                iy - p : iy + p,
+            ] += patch
+            recon_sum[
+                :,
+                ix - p : ix + p,
+                iy - p : iy + p,
+            ] += 1
+        recon /= recon_sum
+        recon = recon[:, p:-p, p:-p]
+
+        thresholds = np.linspace(0, 1, 11)
+        smooth = 1e-6
+        for threshold in thresholds:
+            pred = (recon > threshold).float()
+            dice = (2 * (pred * masks).sum() + smooth) / (
+                pred.sum() + masks.sum() + smooth
+            )
+            self.log_stat(f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice)
 
     def log_stat(self, name, stat):
         self.log(
@@ -61,55 +99,54 @@ class Unet3PlusModule(pl.LightningModule):
 '''
     UNet 3+
 '''
-class unetConv2(nn.Module):
-    def __init__(self, in_size, out_size, is_batchnorm, n=2, ks=3, stride=1, padding=1):
-        super(unetConv2, self).__init__()
-        self.n = n
-        self.ks = ks
-        self.stride = stride
-        self.padding = padding
-        s = stride
-        p = padding
-        if is_batchnorm:
-            for i in range(1, n + 1):
-                conv = nn.Sequential(nn.Conv2d(in_size, out_size, ks, s, p),
-                                     nn.BatchNorm2d(out_size),
-                                     nn.ReLU(inplace=True), )
-                setattr(self, 'conv%d' % i, conv)
-                in_size = out_size
-
-        else:
-            for i in range(1, n + 1):
-                conv = nn.Sequential(nn.Conv2d(in_size, out_size, ks, s, p),
-                                     nn.ReLU(inplace=True), )
-                setattr(self, 'conv%d' % i, conv)
-                in_size = out_size
-
-        # initialise the blocks
-        for m in self.children():
-            init_weights(m, init_type='kaiming')
-
-    def forward(self, inputs):
-        x = inputs
-        for i in range(1, self.n + 1):
-            conv = getattr(self, 'conv%d' % i)
-            x = conv(x)
-
-        return x
-    
-    
 class Unet3Plus(nn.Module):
     """
     Based on https://github.com/ZJUGiveLab/UNet-Version/blob/master/models/UNet_3Plus.py
     """
 
-    def __init__(self, n_channels, is_deconv=True, is_batchnorm=True):
+    def __init__(self, n_channels, n_classes=1, is_deconv=True, is_batchnorm=True):
         super(Unet3Plus, self).__init__()
         self.is_deconv = is_deconv
-        self.in_channels = in_channels
+        self.in_channels = n_channels
         self.is_batchnorm = is_batchnorm
 
         filters = [64, 128, 256, 512, 1024]
+        
+        class unetConv2(nn.Module):
+            def __init__(self, in_size, out_size, is_batchnorm, n=2, ks=3, stride=1, padding=1):
+                super(unetConv2, self).__init__()
+                self.n = n
+                self.ks = ks
+                self.stride = stride
+                self.padding = padding
+                s = stride
+                p = padding
+                if is_batchnorm:
+                    for i in range(1, n + 1):
+                        conv = nn.Sequential(nn.Conv2d(in_size, out_size, ks, s, p),
+                                            nn.BatchNorm2d(out_size),
+                                            nn.ReLU(inplace=True), )
+                        setattr(self, 'conv%d' % i, conv)
+                        in_size = out_size
+
+                else:
+                    for i in range(1, n + 1):
+                        conv = nn.Sequential(nn.Conv2d(in_size, out_size, ks, s, p),
+                                            nn.ReLU(inplace=True), )
+                        setattr(self, 'conv%d' % i, conv)
+                        in_size = out_size
+
+                # initialise the blocks
+                for m in self.children():
+                    init_weights(m, init_type='kaiming')
+
+            def forward(self, inputs):
+                x = inputs
+                for i in range(1, self.n + 1):
+                    conv = getattr(self, 'conv%d' % i)
+                    x = conv(x)
+
+                return x
 
         ## -------------Encoder--------------
         self.conv1 = unetConv2(self.in_channels, filters[0], self.is_batchnorm)
@@ -272,7 +309,7 @@ class Unet3Plus(nn.Module):
         self.relu1d_1 = nn.ReLU(inplace=True)
 
         # output
-        self.outconv1 = nn.Conv2d(self.UpChannels, out_channels, 3, padding=1)
+        self.outconv1 = nn.Conv2d(self.UpChannels, n_classes, 3, padding=1)
 
         # initialise weights
         for m in self.modules():

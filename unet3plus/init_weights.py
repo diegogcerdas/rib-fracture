@@ -1,3 +1,7 @@
+import torch
+import torch.nn as nn
+from torch.nn import init
+
 def weights_init_normal(m):
     classname = m.__class__.__name__
     #print(classname)
