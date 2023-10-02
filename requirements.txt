@@ -10,3 +10,4 @@ tqdm
 jupyter
 opencv-python
 seaborn
+imageio
