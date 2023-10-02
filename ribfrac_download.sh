@@ -17,8 +17,8 @@
 #LOGFILE="ribfrac_download_$(date +'%Y%m%dT%H%M%S').log"
 #touch $LOGFILE
 
-mkdir -p data
-cd data
+mkdir -p data/ribfrac
+cd data/ribfrac
 
 mkdir -p download
 
