@@ -296,7 +296,7 @@ class RibFracDataset(Dataset):
                 os.listdir(os.path.join(self.root_dir, folder_name)), desc=folder_name
             ):
                 f = os.path.join(self.root_dir, folder_name, filename)
-                if filename.endswith(".nii"):
+                if filename.endswith(".nii") or filename.endswith(".nii.gz"):
                     scan = nib.load(f).get_fdata().T.astype(float)
                     label_f = f.replace("image", "label")
                     labels = nib.load(label_f).dataobj
