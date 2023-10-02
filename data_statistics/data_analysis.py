@@ -253,8 +253,6 @@ def fracture_label_analysis(train_folder_path, rib_data):
                 max2darea,
             ])
 
-        break
-
     df_scan = pd.DataFrame(
         scan_data,
         columns=[
