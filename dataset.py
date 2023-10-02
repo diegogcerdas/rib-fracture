@@ -10,6 +10,10 @@ from torch.utils.data.sampler import Sampler
 from torchvision import transforms
 from tqdm import tqdm
 
+import matplotlib.pyplot as plt
+from skimage.morphology import (erosion, dilation, opening, area_closing)
+
+
 
 class RibFracDataset(Dataset):
     def __init__(
@@ -165,6 +169,69 @@ class RibFracDataset(Dataset):
         )
         return mask
     
+def remove_backplate(self, image_2d, plot_interm=False):
+    """ 
+    From a 2d (axial) slice, remove the backplate, 
+    by removing the largest object
+
+    Assume image_2d = np.clip(image_2d, 100, 1600) has been done
+    """
+
+    square = np.array([
+                    [1,1,1],
+                    [1,1,1],
+                    [1,1,1]])
+    def multi_dil(im, num, element=square):
+        for i in range(num):
+            im = dilation(im, element)
+        return im
+    def multi_ero(im, num, element=square):
+        for i in range(num):
+            im = erosion(im, element)
+        return im
+    
+    binarized_axial_image = np.where(image_2d > 190, 1, 0)
+
+    multi_dilated = multi_dil(binarized_axial_image, 7)
+    area_closed = area_closing(multi_dilated, 50000)
+    multi_eroded = multi_ero(area_closed, 7)
+    opened = opening(multi_eroded)
+
+    # Label the connected components in the segmented image
+    labeled_image, num_labels = morphology.label(opened, connectivity=2, return_num=True)
+
+    # Calculate the size of each labeled object
+    object_sizes = np.bincount(labeled_image.ravel())
+
+    # Find the label corresponding to the largest object
+    largest_object_label = np.argmax(object_sizes[1:]) + 1  # +1 to account for background label 0
+
+    # Create a mask to remove the largest object
+    mask = labeled_image == largest_object_label
+
+    # Remove the largest object by setting its pixels to 0
+    filtered_image = image_2d.copy()
+    filtered_image[mask] = max(0, np.min(filtered_image))
+
+    if plot_interm:
+
+        plt.imshow(binarized_axial_image)
+        plt.show()
+
+        plt.imshow(opened)
+        plt.show()
+
+        clipped_idk = np.where(filtered_image > 130, 1, 0)
+        plt.imshow(clipped_idk)
+        plt.show()
+
+        plt.imshow(filtered_image)
+        plt.title("Segmented Image with Largest Object Removed")
+        plt.show()
+
+    return filtered_image
+
+    
     def preprocess(self, img):
         """Preprocess image slice."""
 
@@ -183,9 +250,10 @@ class RibFracDataset(Dataset):
         p = self.patch_original_size // 2
         img = torch.nn.functional.pad(img, (p, p, p, p), mode="constant", value=0)
 
+        
+        img = self.remove_backplate(img, plot_interm=False)
         return img
 
-    # TODO: Remove backplate of CT scan
     def create_train_patch(self, img, mask, is_fracture_slice):
         """Create a training patch from the image and mask slices."""
 
@@ -296,7 +364,7 @@ class RibFracDataset(Dataset):
                 os.listdir(os.path.join(self.root_dir, folder_name)), desc=folder_name
             ):
                 f = os.path.join(self.root_dir, folder_name, filename)
-                if filename.endswith(".nii"):
+                if filename.endswith(".nii") or filename.endswith(".nii.gz"):
                     scan = nib.load(f).get_fdata().T.astype(float)
                     label_f = f.replace("image", "label")
                     labels = nib.load(label_f).dataobj
