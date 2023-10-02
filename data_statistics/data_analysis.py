@@ -167,13 +167,6 @@ def fracture_label_analysis(train_folder_path, rib_data):
             label_scan.shape[2],
             label_scan.shape[0],
         ])
-
-        # data_dev = []
-        # for slice_idx in range(len(label_scan)):
-        #     unique_label_ids = np.unique(label_scan[slice_idx]).tolist()
-        #     data_dev.append([slice_idx, unique_label_ids])
-        # df_slices = pd.DataFrame(data_dev, columns=["slice_idx", "label_ids"])
-
         labels_per_slice = defaultdict(list)
         for slice_idx, slice in enumerate(label_scan):
             unique_label_ids = np.unique(slice).tolist()
@@ -183,16 +176,6 @@ def fracture_label_analysis(train_folder_path, rib_data):
 
             if frac_code == 0:  # ignore background
                 continue
-
-            # idx= list of slice indices where the fracture is present
-            # idx = []
-            # for ind in df_slices.index:
-            #     if frac_idx in df_slices['label_ids'][ind]:
-            #         idx.append(df_slices['slice_idx'][ind])
-            # if idx == []:
-            #     print('WARNING:', public_id, 'has no fracture')
-            #     continue
-            # idxs = sorted(idx)
 
             idxs = []
             for slice_idx, unique_label_ids in labels_per_slice.items():
