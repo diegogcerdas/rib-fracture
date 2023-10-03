@@ -12,9 +12,8 @@ class ConfigTrain:
     patch_original_size: int
     patch_final_size: int
     proportion_fracture_in_patch: float
-    level: int
-    window: int
-    threshold: float
+    clip_min_val: int
+    clip_max_val: int
     test_stride: int
     force_data_info: bool
     context_size: int

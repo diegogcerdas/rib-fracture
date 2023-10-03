@@ -11,3 +11,4 @@ jupyter
 opencv-python
 seaborn
 imageio
+scikit-image
