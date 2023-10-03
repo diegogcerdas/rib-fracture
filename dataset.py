@@ -190,7 +190,7 @@ class RibFracDataset(Dataset):
         # Clip values
         img = img.clip(self.clip_min_val, self.clip_max_val)
 
-        # Rescale values
+        # Rescale values (minmax normalization)
         img = (img - img.min()) / (img.max() - img.min())
 
         # Pad image to allow for patches on the edge
