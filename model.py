@@ -100,6 +100,7 @@ class UnetModule(pl.LightningModule):
                 filename.replace("label.nii", "pred_mask.npy"),
             )
             recon = np.load(f)
+            recon_original_shape = recon.shape
             recon = recon[0] / recon[1]
             recon_side = recon.shape[-1]
             p = (recon_side - masks.shape[-1]) // 2
@@ -111,6 +112,7 @@ class UnetModule(pl.LightningModule):
                     pred.sum() + masks.sum() + smooth
                 )
                 dice_scores[threshold].append(dice)
+            np.save(f, np.zeros(recon_original_shape))
 
         for threshold in thresholds:
             dice_scores[threshold] = np.mean(dice_scores[threshold])
