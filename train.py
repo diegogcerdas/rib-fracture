@@ -16,26 +16,25 @@ if __name__ == "__main__":
 
     # Data Parameters
     parser.add_argument("--data-root", type=str, default="./data/", help="Root directory for data.")
-    parser.add_argument("--patch-original-size", type=int, default=40, help="Size of the patches extracted from original images.")
+    parser.add_argument("--patch-original-size", type=int, default=64, help="Size of the patches extracted from original images.")
     parser.add_argument("--patch-final-size", type=int, default=256, help="Size of the patches after resizing.")
-    parser.add_argument("--proportion-fracture-in-patch", type=float, default=0.25, help="Proportion of fracture pixels in a patch.")
-    parser.add_argument("--level", type=int, default=400, help="Level of the WSI to use.")
-    parser.add_argument("--window", type=int, default=1800, help= "Window size of the WSI to use.")
-    parser.add_argument("--threshold", type=int, default=0.35, help="Threshold to use for bone binarization.")
-    parser.add_argument("--test-stride", type=int, default=20, help="Stride for test/val patches.")
+    parser.add_argument("--proportion-fracture-in-patch", type=float, default=0.1, help="Proportion of fracture pixels in a patch.")
+    parser.add_argument("--clip-min-val", type=int, default=100, help="Lower threshold to clip intensity values")
+    parser.add_argument("--clip-max-val", type=int, default=8000, help= "Upper threshold to clip intensity values.")
+    parser.add_argument("--test-stride", type=int, default=32, help="Stride for test/val patches.")
     parser.add_argument(
         "--force-data-info", action=BooleanOptionalAction, default=False, help="Force data info generation."
     )
 
     # Model Parameters
-    parser.add_argument("--context-size", type=int, default=10, help="Number of slices above and below the middle slice.")
+    parser.add_argument("--context-size", type=int, default=32, help="Number of slices above and below the middle slice.")
 
     # Training Parameters
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-5)
     parser.add_argument("--batch-size-train", type=int, default=64)
-    parser.add_argument("--batch-size-test", type=int, default=8)
+    parser.add_argument("--batch-size-test", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=18)
     parser.add_argument("--max-epochs", type=int, default=1000)
     parser.add_argument(
@@ -64,16 +63,15 @@ if __name__ == "__main__":
         patch_original_size=cfg.patch_original_size,
         patch_final_size=cfg.patch_final_size,
         proportion_fracture_in_patch=cfg.proportion_fracture_in_patch,
-        level=cfg.level,
-        window=cfg.window,
-        threshold=cfg.threshold,
+        clip_min_val=cfg.clip_min_val,
+        clip_max_val=cfg.clip_max_val,
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
     )
-    sampler = train_set.get_sampler(seed=cfg.seed)
+    train_sampler = train_set.get_train_sampler(seed=cfg.seed)
     train_loader = data.DataLoader(
         train_set,
-        sampler=sampler,
+        sampler=train_sampler,
         batch_size=cfg.batch_size_train,
         drop_last=True,
         pin_memory=True,
@@ -87,16 +85,16 @@ if __name__ == "__main__":
         patch_original_size=cfg.patch_original_size,
         patch_final_size=cfg.patch_final_size,
         proportion_fracture_in_patch=cfg.proportion_fracture_in_patch,
-        level=cfg.level,
-        window=cfg.window,
-        threshold=cfg.threshold,
+        clip_min_val=cfg.clip_min_val,
+        clip_max_val=cfg.clip_max_val,
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
     )
+    val_sampler = val_set.get_test_sampler()
     val_loader = data.DataLoader(
         val_set,
+        sampler=val_sampler,
         batch_size=cfg.batch_size_test,
-        shuffle=False,
         drop_last=False,
         num_workers=cfg.num_workers,
     )
@@ -108,7 +106,7 @@ if __name__ == "__main__":
     )
 
     logger = []
-    callbacks = [SetEpochCallback(sampler)]
+    callbacks = [SetEpochCallback(train_sampler)]
 
     if cfg.do_wandb:
         wandb.init(
