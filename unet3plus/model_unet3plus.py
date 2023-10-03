@@ -10,12 +10,15 @@ from unet3plus.init_weights import init_weights
 from unet3plus.loss import BCE_loss, IOU_loss, MSSSIM
 
 class Unet3PlusModule(pl.LightningModule):
-    def __init__(self, n_channels: int, learning_rate: float, weight_decay: float):
+    def __init__(
+        self, n_channels: int, learning_rate: float, weight_decay: float, data_root: str
+    ):
         super(Unet3PlusModule, self).__init__()
         self.save_hyperparameters()
 
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
+        self.data_root = data_root
 
         self.network = Unet3Plus(n_channels)
 
@@ -29,55 +32,75 @@ class Unet3PlusModule(pl.LightningModule):
         return optimizer
 
     def compute_loss(self, batch, mode):
-        #TODO: implement hybrid loss function proposed in UNet 3++ paper
         x, y = batch
         y_hat = self(x)
         loss = F.binary_cross_entropy_with_logits(y_hat, y)
         self.log_stat(f"{mode}_bce_loss", loss)
         return loss
 
-    def compute_eval(self, batch, mode):
-        patches, masks, ps, sts = batch
-        masks = masks.squeeze()
-        bs, num_patches = patches.shape[:2]
-        num_patches_sqrt = int(np.sqrt(num_patches))
-        img_side = masks.shape[-1]
-        patch_original_size = ps[0].item()
-        stride = sts[0].item()
+    def update_pred_masks(self, batch, mode):
+        patches, coords, filenames, slice_idx, pts = batch
+        coords = torch.stack(coords).transpose(0, 1)
+        patch_original_size = pts[0].item()
         p = patch_original_size // 2
-        resize = transforms.Resize(patch_original_size, antialias=True)
+        resize = transforms.Resize(patch_original_size)
 
-        recon = torch.zeros((bs, img_side + 2 * p, img_side + 2 * p))
-        recon_sum = torch.zeros((bs, img_side + 2 * p, img_side + 2 * p))
+        open_files = {}
+        for patch, coord, filename, slice_i in zip(
+            patches, coords, filenames, slice_idx
+        ):
+            if torch.all(patch == 0):
+                continue
+            output = resize(self(patch.unsqueeze(0))).squeeze().detach().cpu().numpy()
+            ix, iy = coord
 
-        for i in range(num_patches):
-            patch = patches[:, i]
-            # TODO: if no bone pixels, return a zero-mask
-            patch = resize(self(patch)).squeeze()
-            ix, iy = np.unravel_index(i, (num_patches_sqrt, num_patches_sqrt))
-            ix = (ix * stride) + p
-            iy = (iy * stride) + p
-            recon[
-                :,
+            if filename not in open_files:
+                open_files[filename] = np.load(filename)
+            open_files[filename][
+                0,
+                slice_i,
                 ix - p : ix + p,
                 iy - p : iy + p,
-            ] += patch
-            recon_sum[
-                :,
+            ] += output
+            open_files[filename][
+                1,
+                slice_i,
                 ix - p : ix + p,
                 iy - p : iy + p,
             ] += 1
-        recon /= recon_sum
-        recon = recon[:, p:-p, p:-p]
 
+        for filename in open_files.keys():
+            np.save(filename, open_files[filename])
+
+    def compute_eval(self, mode):
         thresholds = np.linspace(0, 1, 11)
         smooth = 1e-6
-        for threshold in thresholds:
-            pred = (recon > threshold).float()
-            dice = (2 * (pred * masks).sum() + smooth) / (
-                pred.sum() + masks.sum() + smooth
+        dice = {}
+
+        for filename in os.listdir(
+            os.path.join(self.data_root, f"ribfrac-{mode}-labels")
+        ):
+            f = os.path.join(self.data_root, f"ribfrac-{mode}-labels", filename)
+            masks = nib.load(f).get_fdata().T.astype(int)
+            f = os.path.join(
+                self.data_root,
+                f"{mode}-pred-masks",
+                filename.replace("label.nii", "pred_mask.npy"),
             )
-            self.log_stat(f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice)
+            recon = np.load(f)
+            for threshold in thresholds:
+                dice.setdefault(threshold, [])
+                pred = (recon > threshold).float()
+                dice = (2 * (pred * masks).sum() + smooth) / (
+                    pred.sum() + masks.sum() + smooth
+                )
+                dice[threshold].append(dice)
+
+        for threshold in thresholds:
+            dice[threshold] = np.mean(dice[threshold])
+            self.log_stat(
+                f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice[threshold]
+            )
 
     def log_stat(self, name, stat):
         self.log(
@@ -94,7 +117,10 @@ class Unet3PlusModule(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        _ = self.compute_eval(batch, "val")
+        self.update_pred_masks(batch, "val")
+
+    def on_validation_epoch_end(self) -> None:
+        self.compute_eval("val")
 
 '''
     UNet 3+
