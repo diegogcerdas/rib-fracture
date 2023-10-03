@@ -1,19 +1,17 @@
 import ast
 import os
 
+import matplotlib.pyplot as plt
 import nibabel as nib
 import numpy as np
 import pandas as pd
 import torch
+from skimage import morphology
+from skimage.morphology import area_closing, dilation, erosion, opening
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler
 from torchvision import transforms
 from tqdm import tqdm
-
-import matplotlib.pyplot as plt
-from skimage.morphology import (erosion, dilation, opening, area_closing)
-from skimage import morphology
-
 
 
 class RibFracDataset(Dataset):
@@ -49,7 +47,7 @@ class RibFracDataset(Dataset):
             self.df = pd.read_csv(self.data_info_path)
         else:
             self.df = self.create_data_info_csv()
-        
+
         # Clean the DataFrame and prepare for sampling
         if partition == "train":
             self.drop_slices_without_context()
@@ -80,13 +78,13 @@ class RibFracDataset(Dataset):
         return self.df.shape[0]
 
     def __getitem__(self, idx):
-        
         # If training, create a random patch from the image and mask slices
         if self.partition == "train":
             row = self.df.iloc[idx]
             # Load image and mask slices
-            img = self.load_img(row["img_filename"], row["slice_idx"])
-            mask = self.load_mask(row["img_filename"], row["slice_idx"])
+            filename = os.path.join(self.root_dir, row["img_filename"])
+            img = self.load_img(filename, row["slice_idx"])
+            mask = self.load_mask(filename.replace("image", "label"), row["slice_idx"])
             is_fracture_slice = row["is_fracture_slice"]
             # Pad mask to allow for patches on the edge
             p = self.patch_original_size // 2
@@ -127,55 +125,65 @@ class RibFracDataset(Dataset):
             ix = (ix * self.test_stride) + p
             iy = (iy * self.test_stride) + p
             coord = (ix, iy)
-            # Load image and mask slices
-            img = self.load_img(row["img_filename"], row["slice_idx"])
+            # Load image slice
+            filename = os.path.join(self.root_dir, row["img_filename"])
+            img = self.load_img(filename, row["slice_idx"])
             # Create patch
             img_patch = crop_patch(img, coord, self.patch_original_size)
             # Normalize and transform image patch
             img_patch = self.normalize(img_patch)
             img_patch = self.transform(img_patch)
 
+            npy_filename = os.path.join(
+                self.root_dir,
+                f"{self.partition}-pred-masks",
+                os.path.basename(filename)
+                .replace("image", "pred_mask")
+                .replace(".nii", ".npy"),
+            )
+
             if self.debug:
                 return (
                     img_patch,
                     coord,
-                    row["img_filename"],
+                    npy_filename,
                     row["slice_idx"],
                     self.patch_original_size,
                     img,
                 )
 
-            return img_patch, coord, row["img_filename"], row["slice_idx"], self.patch_original_size
-        
+            return (
+                img_patch,
+                coord,
+                npy_filename,
+                row["slice_idx"],
+                self.patch_original_size,
+            )
+
     def load_img(self, img_filename, slice_idx):
         # Load whole image slice
-        proxy_img = nib.load(os.path.join(self.root_dir, img_filename))
+        proxy_img = nib.load(img_filename)
         img = torch.from_numpy(
             proxy_img.dataobj[
                 ...,
-                slice_idx
-                - self.context_size : slice_idx
-                + self.context_size
-                + 1,
+                slice_idx - self.context_size : slice_idx + self.context_size + 1,
             ]
             .copy()
             .T
         ).float()
         img = self.preprocess(img)
         return img
-    
-    def load_mask(self, img_filename, slice_idx):
+
+    def load_mask(self, mask_filename, slice_idx):
         # Load whole mask slice
-        proxy_mask = nib.load(
-            os.path.join(self.root_dir, img_filename).replace("image", "label")
-        )
+        proxy_mask = nib.load(mask_filename)
         mask = (
             torch.from_numpy(proxy_mask.dataobj[..., slice_idx].copy().T != 0)
             .float()
             .unsqueeze(0)
         )
         return mask
-    
+
     def preprocess(self, img):
         """Preprocess image slice."""
 
@@ -218,7 +226,7 @@ class RibFracDataset(Dataset):
                 mask_patch = crop_patch(mask, random_coord, self.patch_original_size)
                 if torch.sum(mask_patch) == 0:
                     break
-        
+
         # Normalize image patch
         img_patch = self.normalize(img_patch)
         return img_patch, mask_patch, random_coord
@@ -275,11 +283,15 @@ class RibFracDataset(Dataset):
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
         for img_filename, size in tqdm(sizes, desc="Creating local prediction masks"):
-            filename = os.path.basename(img_filename).replace("image", "pred_mask").replace(".nii", ".npy")
+            filename = (
+                os.path.basename(img_filename)
+                .replace("image", "pred_mask")
+                .replace(".nii", ".npy")
+            )
             if os.path.exists(os.path.join(pred_dir, filename)):
                 continue
             s = self.img_size + 2 * (self.patch_original_size // 2)
-            pred_mask = np.zeros((2, s, s, size)).astype(np.float16)
+            pred_mask = np.zeros((2, size, s, s)).astype(np.float16)
             np.save(os.path.join(pred_dir, filename), pred_mask)
 
     def compute_img_size_and_num_patches(self):
@@ -336,7 +348,7 @@ class RibFracDataset(Dataset):
 
     def get_train_sampler(self, seed):
         return BalancedFractureSampler(self.df, seed)
-    
+
     def get_test_sampler(self):
         return TestSampler(self.df, self.num_patches)
 
@@ -379,10 +391,9 @@ class BalancedFractureSampler(Sampler):
             idx_list.append(non_fracture_slice_idx[i])
 
         return iter(idx_list)
-    
+
 
 class TestSampler(Sampler):
-
     def __init__(self, data_info: pd.DataFrame, num_patches: int):
         self.data_info = data_info
         self.num_patches = num_patches
@@ -399,78 +410,77 @@ class TestSampler(Sampler):
         for i in range(len(self.data_info)):
             idx_list += (patch_idx + i * self.num_patches).astype(int).tolist()
         return iter(idx_list)
-    
+
 
 def crop_patch(image, center_coord, patch_size):
     patch = image[
         :,
-        center_coord[0]
-        - patch_size // 2 : center_coord[0]
-        + patch_size // 2,
-        center_coord[1]
-        - patch_size // 2 : center_coord[1]
-        + patch_size // 2,
+        center_coord[0] - patch_size // 2 : center_coord[0] + patch_size // 2,
+        center_coord[1] - patch_size // 2 : center_coord[1] + patch_size // 2,
     ]
     return patch
 
+
 def remove_backplate(image_2d, plot_interm=False):
-        """ 
-        From a 2d (axial) slice, remove the backplate, 
-        by removing the largest object
+    """
+    From a 2d (axial) slice, remove the backplate,
+    by removing the largest object
 
-        Assume image_2d = np.clip(image_2d, 100, 1600) has been done
-        """
+    Assume image_2d = np.clip(image_2d, 100, 1600) has been done
+    """
 
-        square = np.array([
-                        [1,1,1],
-                        [1,1,1],
-                        [1,1,1]])
-        def multi_dil(im, num, element=square):
-            for i in range(num):
-                im = dilation(im, element)
-            return im
-        def multi_ero(im, num, element=square):
-            for i in range(num):
-                im = erosion(im, element)
-            return im
-        
-        binarized_axial_image = np.where(image_2d > 190, 1, 0)
+    square = np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1]])
 
-        multi_dilated = multi_dil(binarized_axial_image, 7)
-        area_closed = area_closing(multi_dilated, 50000)
-        multi_eroded = multi_ero(area_closed, 7)
-        opened = opening(multi_eroded)
+    def multi_dil(im, num, element=square):
+        for i in range(num):
+            im = dilation(im, element)
+        return im
 
-        # Label the connected components in the segmented image
-        labeled_image, num_labels = morphology.label(opened, connectivity=2, return_num=True)
+    def multi_ero(im, num, element=square):
+        for i in range(num):
+            im = erosion(im, element)
+        return im
 
-        # Calculate the size of each labeled object
-        object_sizes = np.bincount(labeled_image.ravel())
+    binarized_axial_image = np.where(image_2d > 190, 1, 0)
 
-        # Find the label corresponding to the largest object
-        largest_object_label = np.argmax(object_sizes[1:]) + 1  # +1 to account for background label 0
+    multi_dilated = multi_dil(binarized_axial_image, 7)
+    area_closed = area_closing(multi_dilated, 50000)
+    multi_eroded = multi_ero(area_closed, 7)
+    opened = opening(multi_eroded)
 
-        # Create a mask to remove the largest object
-        mask = labeled_image == largest_object_label
+    # Label the connected components in the segmented image
+    labeled_image, num_labels = morphology.label(
+        opened, connectivity=2, return_num=True
+    )
 
-        # Remove the largest object by setting its pixels to 0
-        filtered_image = image_2d.copy()
-        filtered_image[mask] = max(0, np.min(filtered_image))
+    # Calculate the size of each labeled object
+    object_sizes = np.bincount(labeled_image.ravel())
 
-        if plot_interm:
+    # Find the label corresponding to the largest object
+    largest_object_label = (
+        np.argmax(object_sizes[1:]) + 1
+    )  # +1 to account for background label 0
 
-            plt.imshow(binarized_axial_image)
-            plt.show()
+    # Create a mask to remove the largest object
+    mask = labeled_image == largest_object_label
 
-            plt.imshow(opened)
-            plt.show()
+    # Remove the largest object by setting its pixels to 0
+    filtered_image = image_2d.copy()
+    filtered_image[mask] = max(0, np.min(filtered_image))
 
-            clipped_idk = np.where(filtered_image > 130, 1, 0)
-            plt.imshow(clipped_idk)
-            plt.show()
+    if plot_interm:
+        plt.imshow(binarized_axial_image)
+        plt.show()
 
-            plt.imshow(filtered_image)
-            plt.title("Segmented Image with Largest Object Removed")
-            plt.show()
+        plt.imshow(opened)
+        plt.show()
 
-        return filtered_image
+        clipped_idk = np.where(filtered_image > 130, 1, 0)
+        plt.imshow(clipped_idk)
+        plt.show()
+
+        plt.imshow(filtered_image)
+        plt.title("Segmented Image with Largest Object Removed")
+        plt.show()
+
+    return filtered_image
