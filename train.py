@@ -15,19 +15,56 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # Data Parameters
-    parser.add_argument("--data-root", type=str, default="./data/", help="Root directory for data.")
-    parser.add_argument("--patch-original-size", type=int, default=64, help="Size of the patches extracted from original images.")
-    parser.add_argument("--patch-final-size", type=int, default=256, help="Size of the patches after resizing.")
-    parser.add_argument("--proportion-fracture-in-patch", type=float, default=0.1, help="Proportion of fracture pixels in a patch.")
-    parser.add_argument("--clip-min-val", type=int, default=100, help="Lower threshold to clip intensity values")
-    parser.add_argument("--clip-max-val", type=int, default=8000, help= "Upper threshold to clip intensity values.")
-    parser.add_argument("--test-stride", type=int, default=32, help="Stride for test/val patches.")
     parser.add_argument(
-        "--force-data-info", action=BooleanOptionalAction, default=False, help="Force data info generation."
+        "--data-root", type=str, default="./data/", help="Root directory for data."
+    )
+    parser.add_argument(
+        "--patch-original-size",
+        type=int,
+        default=64,
+        help="Size of the patches extracted from original images.",
+    )
+    parser.add_argument(
+        "--patch-final-size",
+        type=int,
+        default=256,
+        help="Size of the patches after resizing.",
+    )
+    parser.add_argument(
+        "--proportion-fracture-in-patch",
+        type=float,
+        default=0.1,
+        help="Proportion of fracture pixels in a patch.",
+    )
+    parser.add_argument(
+        "--clip-min-val",
+        type=int,
+        default=100,
+        help="Lower threshold to clip intensity values",
+    )
+    parser.add_argument(
+        "--clip-max-val",
+        type=int,
+        default=8000,
+        help="Upper threshold to clip intensity values.",
+    )
+    parser.add_argument(
+        "--test-stride", type=int, default=32, help="Stride for test/val patches."
+    )
+    parser.add_argument(
+        "--force-data-info",
+        action=BooleanOptionalAction,
+        default=False,
+        help="Force data info generation.",
     )
 
     # Model Parameters
-    parser.add_argument("--context-size", type=int, default=32, help="Number of slices above and below the middle slice.")
+    parser.add_argument(
+        "--context-size",
+        type=int,
+        default=32,
+        help="Number of slices above and below the middle slice.",
+    )
 
     # Training Parameters
     parser.add_argument("--seed", type=int, default=42)
