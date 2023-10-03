@@ -7,6 +7,7 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch import nn, optim
+from tqdm import tqdm
 
 
 class UnetModule(pl.LightningModule):
@@ -42,12 +43,12 @@ class UnetModule(pl.LightningModule):
         self.log_stat(f"{mode}_bce_loss", loss)
         return loss
 
-    def update_pred_masks(self, batch, mode):
+    def update_pred_masks(self, batch):
         patches, coords, filenames, slice_idx, pts = batch
         coords = torch.stack(coords).transpose(0, 1)
         patch_original_size = pts[0].item()
         p = patch_original_size // 2
-        resize = transforms.Resize(patch_original_size)
+        resize = transforms.Resize(patch_original_size, antialias=True)
 
         open_files = {}
         for patch, coord, filename, slice_i in zip(
@@ -55,7 +56,13 @@ class UnetModule(pl.LightningModule):
         ):
             if torch.all(patch == 0):
                 continue
-            output = resize(self(patch.unsqueeze(0))).squeeze().detach().cpu().numpy()
+            output = (
+                resize(F.sigmoid(self(patch.unsqueeze(0))))
+                .squeeze()
+                .detach()
+                .cpu()
+                .numpy()
+            )
             ix, iy = coord
 
             if filename not in open_files:
@@ -79,10 +86,11 @@ class UnetModule(pl.LightningModule):
     def compute_eval(self, mode):
         thresholds = np.linspace(0, 1, 11)
         smooth = 1e-6
-        dice = {}
+        dice_scores = {}
 
-        for filename in os.listdir(
-            os.path.join(self.data_root, f"ribfrac-{mode}-labels")
+        for filename in tqdm(
+            os.listdir(os.path.join(self.data_root, f"ribfrac-{mode}-labels")),
+            desc="Computing dice scores",
         ):
             f = os.path.join(self.data_root, f"ribfrac-{mode}-labels", filename)
             masks = nib.load(f).get_fdata().T.astype(int)
@@ -92,18 +100,22 @@ class UnetModule(pl.LightningModule):
                 filename.replace("label.nii", "pred_mask.npy"),
             )
             recon = np.load(f)
+            recon = recon[0] / recon[1]
+            recon_side = recon.shape[-1]
+            p = (recon_side - masks.shape[-1]) // 2
+            recon = recon[:, p : recon_side - p, p : recon_side - p]
             for threshold in thresholds:
-                dice.setdefault(threshold, [])
-                pred = (recon > threshold).float()
+                dice_scores.setdefault(threshold, [])
+                pred = (recon > threshold).astype(float)
                 dice = (2 * (pred * masks).sum() + smooth) / (
                     pred.sum() + masks.sum() + smooth
                 )
-                dice[threshold].append(dice)
+                dice_scores[threshold].append(dice)
 
         for threshold in thresholds:
-            dice[threshold] = np.mean(dice[threshold])
+            dice_scores[threshold] = np.mean(dice_scores[threshold])
             self.log_stat(
-                f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice[threshold]
+                f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice_scores[threshold]
             )
 
     def log_stat(self, name, stat):
@@ -121,7 +133,7 @@ class UnetModule(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        self.update_pred_masks(batch, "val")
+        self.update_pred_masks(batch)
 
     def on_validation_epoch_end(self) -> None:
         self.compute_eval("val")

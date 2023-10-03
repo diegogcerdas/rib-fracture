@@ -291,7 +291,7 @@ class RibFracDataset(Dataset):
             if os.path.exists(os.path.join(pred_dir, filename)):
                 continue
             s = self.img_size + 2 * (self.patch_original_size // 2)
-            pred_mask = np.zeros((2, size, s, s)).astype(np.float16)
+            pred_mask = np.zeros((2, size + 1, s, s)).astype(np.float16)
             np.save(os.path.join(pred_dir, filename), pred_mask)
 
     def compute_img_size_and_num_patches(self):

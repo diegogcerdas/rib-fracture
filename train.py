@@ -4,9 +4,9 @@ from argparse import BooleanOptionalAction
 import pytorch_lightning as pl
 import torch
 import torch.utils.data as data
+import wandb
 from pytorch_lightning.loggers import WandbLogger
 
-import wandb
 from dataset import RibFracDataset
 from model import UnetModule
 from utils import SetEpochCallback, config_from_args
@@ -21,13 +21,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--patch-original-size",
         type=int,
-        default=64,
+        default=32,
         help="Size of the patches extracted from original images.",
     )
     parser.add_argument(
         "--patch-final-size",
         type=int,
-        default=256,
+        default=64,
         help="Size of the patches after resizing.",
     )
     parser.add_argument(
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--context-size",
         type=int,
-        default=32,
+        default=2,
         help="Number of slices above and below the middle slice.",
     )
 
@@ -70,9 +70,9 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--weight-decay", type=float, default=1e-5)
-    parser.add_argument("--batch-size-train", type=int, default=64)
-    parser.add_argument("--batch-size-test", type=int, default=64)
-    parser.add_argument("--num-workers", type=int, default=18)
+    parser.add_argument("--batch-size-train", type=int, default=4)
+    parser.add_argument("--batch-size-test", type=int, default=4)
+    parser.add_argument("--num-workers", type=int, default=8)
     parser.add_argument("--max-epochs", type=int, default=1000)
     parser.add_argument(
         "--device",
@@ -140,6 +140,7 @@ if __name__ == "__main__":
         n_channels=1 + 2 * cfg.context_size,
         learning_rate=cfg.learning_rate,
         weight_decay=cfg.weight_decay,
+        data_root=cfg.data_root,
     )
 
     logger = []
