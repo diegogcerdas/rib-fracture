@@ -31,6 +31,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import seaborn as sns
 sns.set_theme()
 import imageio
+from skimage.transform import resize
 
 
 LABEL_CODE = {
@@ -435,13 +436,14 @@ def equalize_per_slice(scan):
 
 # analysis: pixel values
 
-def analysis_pixel_values(images_path, fn_preprocess):
+def analysis_pixel_values(images_path, fn_preprocess, cum_align='top'):
     """
     Accumulates all scans in the (train) images folder after preprocessing them with fn_preprocess
 
     Args:
         images_path: path to the (train) images folder
         fn_preprocess: function that takes a scan and returns the scan preprocessed. It must return a binary boolean array with coords (z, x, y)
+        cum_align: how the scans with different sizes should be aligned. 'top'/'bottom'/'center'/'fit'. 'fit' stretches to relative height
     
     Returns:
         mean: mean value of all pixels in all scans
@@ -449,13 +451,19 @@ def analysis_pixel_values(images_path, fn_preprocess):
         cum_scans: cumulative sum of all scans
         avg_scan: average scan
     """
-    max_num_slices = 721  # hardcoded from df_scan.describe()>size_z>max
+    max_size = 721  # hardcoded from df_scan.describe()>size_z>max
+    fit_size = 512  # hardcoded to match x and y, value in between min=239 and max=721
 
     sum_values = 0  # for mean
     sum_values2 = 0  # squared, for std
     tot_elem = 0  # total number of elements
-    cum_scans = np.zeros((max_num_slices, 512, 512))
-    cum_scans_n = np.zeros((max_num_slices, 512, 512))
+
+    if cum_align == 'fit':
+        cum_scans = np.zeros((fit_size, 512, 512))
+        cum_scans_n = 0  # only number of scans needed
+    else:
+        cum_scans = np.zeros((max_size, 512, 512))
+        cum_scans_n = np.zeros((max_size, 512, 512))
 
     for filename in tqdm(os.listdir(images_path)[2:], desc='analyze pixel values'):
 
@@ -473,8 +481,20 @@ def analysis_pixel_values(images_path, fn_preprocess):
         sum_values += np.sum(scan)
         sum_values2 += np.sum(scan**2)
         tot_elem += scan.size
-        cum_scans[:scan.shape[0]] += scan  # accumulate slices
-        cum_scans_n[:scan.shape[0]] += 1
+
+        if cum_align == 'top':
+            cum_scans[:scan.shape[0]] += scan
+            cum_scans_n[:scan.shape[0]] += 1
+        elif cum_align == 'bottom':
+            cum_scans[-scan.shape[0]:] += scan
+            cum_scans_n[-scan.shape[0]:] += 1
+        elif cum_align == 'center':
+            cum_scans[(max_size-scan.shape[0])//2:(max_size+scan.shape[0])//2] += scan
+            cum_scans_n[(max_size-scan.shape[0])//2:(max_size+scan.shape[0])//2] += 1
+        elif cum_align == 'fit':
+            resized_scan = resize(scan, (fit_size, 512, 512), preserve_range=True)
+            cum_scans += resized_scan
+            cum_scans_n += 1
 
     # compute mean and std
     mean = sum_values / tot_elem
