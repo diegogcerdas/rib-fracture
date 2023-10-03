@@ -20,6 +20,7 @@ Contains:
 
 import os
 from collections import defaultdict, Counter
+import json
 
 import nibabel as nib
 import numpy as np
@@ -364,6 +365,26 @@ def create_gif(scan, save_path):
     print('saved gif at', save_path)
 
 
+# file managing
+
+def load_params_json(json_path):
+    """read params.json file from analysis_root"""
+    if not os.path.exists(json_path):
+        return {}
+    with open(json_path) as json_file:
+        params = json.load(json_file)
+    return params
+
+def update_params_json(json_path, **params):
+    """update params.json file from analysis_root with params"""
+    params_dict = load_params_json(json_path)
+    params_dict.update(params)
+    if not os.path.exists(json_path):
+        os.makedirs(os.path.dirname(json_path), exist_ok=True)
+    with open(json_path, 'w') as json_file:
+        json.dump(params_dict, json_file, indent=4)
+
+
 # array value operations
 
 def minmax(image, range=None):
@@ -421,12 +442,22 @@ def analysis_pixel_values(images_path, fn_preprocess):
     Args:
         images_path: path to the (train) images folder
         fn_preprocess: function that takes a scan and returns the scan preprocessed. It must return a binary boolean array with coords (z, x, y)
+    
+    Returns:
+        mean: mean value of all pixels in all scans
+        std: standard deviation of all pixels in all scans
+        cum_scans: cumulative sum of all scans
+        avg_scan: average scan
     """
     max_num_slices = 721  # hardcoded from df_scan.describe()>size_z>max
 
+    sum_values = 0  # for mean
+    sum_values2 = 0  # squared, for std
+    tot_elem = 0  # total number of elements
     cum_scans = np.zeros((max_num_slices, 512, 512))
+    cum_scans_n = np.zeros((max_num_slices, 512, 512))
 
-    for filename in tqdm(os.listdir(images_path)[2:], desc='overlaping slices'):
+    for filename in tqdm(os.listdir(images_path)[2:], desc='analyze pixel values'):
 
         if not (filename.endswith("image.nii.gz") or filename.endswith("image.nii")):
             print('WARNING: Directory structure is not as expected. Ignoring file', filename)
@@ -439,9 +470,19 @@ def analysis_pixel_values(images_path, fn_preprocess):
         # threshold scan
         scan = fn_preprocess(raw_scan)  # (z, x, y)
 
-        # accumulate slices
-        cum_scans[:scan.shape[0]] += scan
+        sum_values += np.sum(scan)
+        sum_values2 += np.sum(scan**2)
+        tot_elem += scan.size
+        cum_scans[:scan.shape[0]] += scan  # accumulate slices
+        cum_scans_n[:scan.shape[0]] += 1
+
+    # compute mean and std
+    mean = sum_values / tot_elem
+    std = np.sqrt(sum_values2 / tot_elem - mean**2)
+
+    # compute cumulative scan
+    avg_scan = cum_scans / cum_scans_n
 
     print('Done!')
 
-    return cum_scans
+    return mean, std, cum_scans, avg_scan
