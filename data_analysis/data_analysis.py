@@ -327,6 +327,7 @@ def imshow(img, title=None, range=None):
     plt.imshow(img, cmap='gray', vmin=vmin, vmax=vmax)
     if title:
         plt.title(title)
+    plt.colorbar()
     plt.show()
     sns.set_theme()
 
@@ -458,8 +459,8 @@ def equalize_per_slice(scan):
         equalized_scan[i] = histogram_equalization(scan[i])
     return equalized_scan
 
-def median_filter(img, kernel_size=3):
-    """median filter with kernel size"""
+def remove_noise(img, kernel_size=3):
+    """remove salt-and-papper noise with median filter"""
     return ndimage.median_filter(img, size=kernel_size)
 
 
@@ -545,38 +546,42 @@ def identify_components(img, struct_elem=SQUARE_STRUCT):
     img: 2d image
     elem: structuring element
     """
-    def multi_dil(im, num, element=struct_elem):
-        for i in range(num):
-            im = morphology.dilation(im, element)
-        return im
+    # binarized_axial_image = np.where(img > 0.05, 1, 0)  # FIXME: hardcoded threshold (190)
+    # multi_dilated = multi_dil(binarized_axial_image, 4)  # FIXME: hardcoded dilation (7)
+    # area_closed = morphology.area_closing(multi_dilated, 10000)  # FIXME: hardcoded area (50000)
+    # multi_eroded = multi_ero(area_closed, 1)  # FIXME: hardcoded erosion (7)
+    # opened = morphology.opening(multi_eroded)
 
-    def multi_ero(im, num, element=struct_elem):
-        for i in range(num):
-            im = morphology.erosion(im, element)
-        return im
-
-    binarized_axial_image = np.where(img > 190, 1, 0)
-
-    multi_dilated = multi_dil(binarized_axial_image, 7)
-    area_closed = morphology.area_closing(multi_dilated, 50000)
-    multi_eroded = multi_ero(area_closed, 7)
-    opened = morphology.opening(multi_eroded)
+    im = np.where(img > 0.04, 1, 0)
+    imshow(im, title='binarized')
+    im = morphology.closing(im, np.ones((5,5)))
+    imshow(im, title='closed')
+    im = remove_noise(im, kernel_size=3)
+    imshow(im, title='noise removed')
+    for _ in range(5):
+        im = morphology.dilation(im, np.ones((3,3)))
+    imshow(im, title='dilated')
+    im = morphology.area_closing(im, 50000)
+    imshow(im, title='area closed')
+    for _ in range(5):
+        im = morphology.erosion(im, np.ones((3,3)))
+    im = morphology.opening(im)
+    imshow(im, title='opened')
+    opened = im
 
     # Label the connected components in the segmented image
-    labeled_image, num_labels = morphology.label(
-        opened, connectivity=2, return_num=True
-    )
+    labeled_image, num_labels = morphology.label(opened, connectivity=2, return_num=True)
 
     return labeled_image, num_labels
 
 def largest_component(labeled_img, return_mask=False):
-    labeled_img, num_labels = identify_components(labeled_img)
     areas = np.bincount(labeled_img.ravel())
-
+    if len(areas) == 1:
+        # no connected components other than background
+        return (0, None) if return_mask else 0
+    
     # largest object
-    largest_object_label = (
-        np.argmax(areas[1:]) + 1  # FIXME is background handled correctly?
-    )  # +1 to account for background label 0
+    largest_object_label = np.argmax(areas[1:]) + 1  # +1 to account for background label 0
 
     if return_mask:
         mask = labeled_img == largest_object_label
@@ -588,6 +593,9 @@ def _remove_largest_component(img):  # TODO: unused
     img: 2d image in range [0,1]
     """
     _, mask = largest_component(img, return_mask=True)
+    if mask is None:
+        # no connected components other than background
+        return img
 
     # TODO: dilate mask
 
@@ -646,7 +654,16 @@ def analysis_conn_comp(images_path, fn_preprocess, struct_elem=SQUARE_STRUCT, ma
 
         for slice_idx in slice_idxs:
             slice_ = scan[slice_idx]
+
+            imshow(slice_, title=f'{public_id} - slice {slice_idx} - preprocessed')
+
             labeled_img, num_labels = identify_components(slice_, struct_elem=struct_elem)
+
+            imshow(labeled_img, title=f'{public_id} - slice {slice_idx} - labeled components')
+
+            if num_labels == 0:
+                # no connected components other than background
+                continue
             largest_component_label = largest_component(labeled_img)
             for lab in range(num_labels):
                 mask = labeled_img == lab
@@ -695,30 +712,30 @@ def compute_or_load_fracture_analysis(analysis_root, labels_path, rib_data):
     return df_scan, df_frac
 
 
-def compute_or_load_pixel_analysis(analysis_root, images_path, fn_preprocess, align='top'):
-    cum_scans_path = os.path.join(analysis_root, f'cum_scan_align{align}.npy')
+def compute_or_load_pixel_analysis(analysis_root, images_path, fn_preprocess, align='top'):  # TODO: tmp - ignores cum
+    #cum_scans_path = os.path.join(analysis_root, f'cum_scan_align{align}.npy')
     avg_scan_path = os.path.join(analysis_root, f'avg_scan_align{align}.npy')
     params_path = os.path.join(analysis_root, 'params.json')
 
-    if os.path.exists(cum_scans_path):  # and os.path.exists(avg_scan_path):
-        cum_scan = np.load(cum_scans_path)
+    if os.path.exists(avg_scan_path):
+        #cum_scan = np.load(cum_scans_path)
         avg_scan = np.load(avg_scan_path)
         params = load_params_json(params_path)
         mean, std = params['mean'], params['std']
         print('Loaded existing analysis')
     else:
         print('No existing analysis found, computing...')
-        mean, std, cum_scan, avg_scan = analysis_pixel_values(images_path, fn_preprocess, align=align)
-        np.save(cum_scans_path, cum_scan)
+        mean, std, _, avg_scan = analysis_pixel_values(images_path, fn_preprocess, align=align)
+        #np.save(cum_scans_path, cum_scan)
         np.save(avg_scan_path, avg_scan)
         update_params_json(params_path, mean=mean, std=std)
         print('Saved files:',
               params_path,
-              cum_scans_path,
+              #cum_scans_path,
               avg_scan_path,
               sep='\n\t')
 
-    return mean, std, cum_scan, avg_scan
+    return mean, std, None, avg_scan
 
 
 def compute_or_load_eq(analysis_root, cum_scan, avg_scan, *, align):
@@ -775,7 +792,7 @@ def compute_or_load_conn_comp_analysis(analysis_root, images_path, fn_preprocess
         print('No existing analysis found, computing...')
         df_conn_comp = analysis_conn_comp(
             images_path, fn_preprocess,
-            struct_elem=STAR_STRUCT,
+            struct_elem=SQUARE_STRUCT,
             max_files=max_files, max_slices=max_slices
         )
         os.makedirs(analysis_root, exist_ok=True)
@@ -805,16 +822,18 @@ if __name__ == '__main__':
         img = (img - img.min()) / (img.max() - img.min())
         return img
 
-    rib_data = compute_rib_data([TRAIN_INFO])
+    #rib_data = compute_rib_data([TRAIN_INFO])
 
     print('\nFRACTURE ANALYSIS')
-    _, _ = compute_or_load_fracture_analysis(ANALYSIS_ROOT, TRAIN_LABELS, rib_data)
+    #_, _ = compute_or_load_fracture_analysis(ANALYSIS_ROOT, TRAIN_LABELS, rib_data)
 
     print('\nPIXEL ANALYSIS')
     for align in ['top', 'bottom', 'center', 'fit']:
+        break  # TODO: compute this!
         print('\nALIGN={}'.format(align))
         _, _, cum_scan, avg_scan = compute_or_load_pixel_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, preprocess1, align=align)
-        _ = compute_or_load_eq(ANALYSIS_ROOT, cum_scan, avg_scan, align=align)
+        #_ = compute_or_load_eq(ANALYSIS_ROOT, cum_scan, avg_scan, align=align)  # TODO: tmp - ignore eq
 
     print('\nCONNECTED COMPONENTS ANALYSIS')
     _ = compute_or_load_conn_comp_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, preprocess1, max_files=10, max_slices=50)
+
