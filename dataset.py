@@ -139,7 +139,7 @@ class RibFracDataset(Dataset):
                 f"{self.partition}-pred-masks",
                 os.path.basename(filename)
                 .replace("image", "pred_mask")
-                .replace(".nii", ".npy"),
+                .replace(".nii", ".npz"),
             )
 
             if self.debug:
@@ -286,13 +286,14 @@ class RibFracDataset(Dataset):
             filename = (
                 os.path.basename(img_filename)
                 .replace("image", "pred_mask")
-                .replace(".nii", ".npy")
+                .replace(".nii", ".npz")
             )
             if os.path.exists(os.path.join(pred_dir, filename)):
                 continue
             s = self.img_size + 2 * (self.patch_original_size // 2)
-            pred_mask = np.zeros((2, size + 1, s, s)).astype(np.float16)
-            np.save(os.path.join(pred_dir, filename), pred_mask)
+            pred_mask = np.zeros((size + 1, s, s)).astype(np.float16)
+            pred_mask_sum = np.zeros((size + 1, s, s)).astype(np.int8)
+            np.savez_compressed(os.path.join(pred_dir, filename), pred_mask, pred_mask_sum)
 
     def compute_img_size_and_num_patches(self):
         filename = os.path.join(self.root_dir, self.df.iloc[0]["img_filename"])

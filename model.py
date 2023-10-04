@@ -66,22 +66,22 @@ class UnetModule(pl.LightningModule):
             ix, iy = coord
 
             if filename not in open_files:
-                open_files[filename] = np.load(filename)
-            open_files[filename][
-                0,
+                open_files[filename] = {}
+                open_files[filename]['pred'] = np.load(filename)['arr_0']
+                open_files[filename]['sum'] = np.load(filename)['arr_1']
+            open_files[filename]['pred'][
                 slice_i,
                 ix - p : ix + p,
                 iy - p : iy + p,
-            ] += output
-            open_files[filename][
-                1,
+            ] += output.astype(np.float16)
+            open_files[filename]['sum'][
                 slice_i,
                 ix - p : ix + p,
                 iy - p : iy + p,
             ] += 1
 
         for filename in open_files.keys():
-            np.save(filename, open_files[filename])
+            np.savez_compressed(filename, open_files[filename]['pred'], open_files[filename]['sum'])
 
     def compute_eval(self, mode):
         thresholds = np.linspace(0, 1, 11)
@@ -97,11 +97,12 @@ class UnetModule(pl.LightningModule):
             f = os.path.join(
                 self.data_root,
                 f"{mode}-pred-masks",
-                filename.replace("label.nii", "pred_mask.npy"),
+                filename.replace("label.nii", "pred_mask.npz"),
             )
-            recon = np.load(f)
+            recon = np.load(f)['arr_0']
+            recon_sum = np.load(f)['arr_1']
             recon_original_shape = recon.shape
-            recon = recon[0] / recon[1]
+            recon = recon / recon_sum
             recon_side = recon.shape[-1]
             p = (recon_side - masks.shape[-1]) // 2
             recon = recon[:, p : recon_side - p, p : recon_side - p]
@@ -112,7 +113,8 @@ class UnetModule(pl.LightningModule):
                     pred.sum() + masks.sum() + smooth
                 )
                 dice_scores[threshold].append(dice)
-            np.save(f, np.zeros(recon_original_shape))
+            np.savez_compressed(f, np.zeros(recon_original_shape).astype(np.float16), 
+                                np.zeros(recon_original_shape).astype(np.int8))
 
         for threshold in thresholds:
             dice_scores[threshold] = np.mean(dice_scores[threshold])
