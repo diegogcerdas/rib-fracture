@@ -5,8 +5,8 @@ import pytorch_lightning as pl
 import torch
 import torch.utils.data as data
 import wandb
-from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
 
 from dataset import RibFracDataset
 from model import UnetModule
@@ -20,7 +20,10 @@ if __name__ == "__main__":
         "--data-root", type=str, default="./data/", help="Root directory for data."
     )
     parser.add_argument(
-        "--ckpt-root", type=str, default="./checkpoints/", help="Root directory for checkpoints."
+        "--ckpt-root",
+        type=str,
+        default="./checkpoints/",
+        help="Root directory for checkpoints.",
     )
     parser.add_argument(
         "--patch-original-size",
@@ -43,8 +46,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cutoff-height",
         type=int,
-        default=460,
-        help="Height value to remove backplate.",
+        default=492,
+        help="Height value to remove backplate. Make sure to consider padding.",
     )
     parser.add_argument(
         "--clip-min-val",
@@ -152,11 +155,16 @@ if __name__ == "__main__":
         n_channels=1 + 2 * cfg.context_size,
         learning_rate=cfg.learning_rate,
         weight_decay=cfg.weight_decay,
+        cutoff_height=cfg.cutoff_height,
         data_root=cfg.data_root,
     )
 
     logger = []
-    checkpoint_callback = ModelCheckpoint(dirpath=f'{cfg.ckpt_root}/{cfg.exp_name}', save_top_k=1, monitor="val_dice_coeff_0.5")
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=f"{cfg.ckpt_root}/{cfg.exp_name}",
+        save_top_k=1,
+        monitor="val_dice_coeff_0.5",
+    )
     callbacks = [SetEpochCallback(train_sampler), checkpoint_callback]
 
     if cfg.do_wandb:

@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch import optim
 from tqdm import tqdm
+
 from unet3plus.model_unet3plus import Unet3Plus
 
 
@@ -17,7 +18,12 @@ class UnetModule(pl.LightningModule):
     """
 
     def __init__(
-        self, n_channels: int, learning_rate: float, weight_decay: float, cutoff_height: int, data_root: str
+        self,
+        n_channels: int,
+        learning_rate: float,
+        weight_decay: float,
+        cutoff_height: int,
+        data_root: str,
     ):
         super(UnetModule, self).__init__()
         self.save_hyperparameters()
@@ -109,7 +115,7 @@ class UnetModule(pl.LightningModule):
             recon_side = recon.shape[-1]
             p = (recon_side - masks.shape[-1]) // 2
             recon = recon[:, p : recon_side - p, p : recon_side - p]
-            recon[self.cutoff_height:] = 0
+            recon[self.cutoff_height :] = 0
             for threshold in thresholds:
                 dice_scores.setdefault(threshold, [])
                 pred = (recon > threshold).astype(float)

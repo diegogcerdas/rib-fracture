@@ -208,14 +208,16 @@ class RibFracDataset(Dataset):
         coords = torch.stack(torch.where(img[middle] > 0.05), dim=1)
         coords = coords[coords[:, 0] < self.cutoff_height]
 
-        offset_range = int(0.25*self.patch_original_size)
+        offset_range = int(0.25 * self.patch_original_size)
         random_offset = np.random.randint(-offset_range, offset_range, (2,))
 
         if is_fracture_slice:
             # Look for patch with sufficient fracture pixels
             for random_coord in np.random.permutation(coords):
                 random_coord += random_offset
-                if random_coord[0] >= (img.shape[-1] - self.patch_original_size//2) or random_coord[1] >= (img.shape[-1] - self.patch_original_size//2):
+                if random_coord[0] >= (
+                    img.shape[-1] - self.patch_original_size // 2
+                ) or random_coord[1] >= (img.shape[-1] - self.patch_original_size // 2):
                     continue
                 img_patch = crop_patch(img, random_coord, self.patch_original_size)
                 mask_patch = crop_patch(mask, random_coord, self.patch_original_size)
@@ -228,7 +230,9 @@ class RibFracDataset(Dataset):
             # Look for patch with no fracture pixels
             for random_coord in np.random.permutation(coords):
                 random_coord += random_offset
-                if random_coord[0] >= (img.shape[-1] - self.patch_original_size//2) or random_coord[1] >= (img.shape[-1] - self.patch_original_size//2):
+                if random_coord[0] >= (
+                    img.shape[-1] - self.patch_original_size // 2
+                ) or random_coord[1] >= (img.shape[-1] - self.patch_original_size // 2):
                     continue
                 img_patch = crop_patch(img, random_coord, self.patch_original_size)
                 mask_patch = crop_patch(mask, random_coord, self.patch_original_size)
@@ -297,8 +301,6 @@ class RibFracDataset(Dataset):
                 .replace(".nii", ".npy")
                 .replace(".gz", "")
             )
-            if os.path.exists(os.path.join(pred_dir, filename)):
-                continue
             s = self.img_size + 2 * (self.patch_original_size // 2)
             pred_mask = np.zeros((2, size + 1, s, s)).astype(np.float16)
             np.save(os.path.join(pred_dir, filename), pred_mask)

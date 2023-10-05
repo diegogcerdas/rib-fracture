@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class Unet(nn.Module):
     def __init__(self, n_channels):
         super(Unet, self).__init__()
