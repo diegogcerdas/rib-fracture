@@ -17,7 +17,7 @@ class UnetModule(pl.LightningModule):
     """
 
     def __init__(
-        self, n_channels: int, learning_rate: float, weight_decay: float, data_root: str
+        self, n_channels: int, learning_rate: float, weight_decay: float, cutoff_height: int, data_root: str
     ):
         super(UnetModule, self).__init__()
         self.save_hyperparameters()
@@ -25,6 +25,7 @@ class UnetModule(pl.LightningModule):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.data_root = data_root
+        self.cutoff_height = cutoff_height
 
         self.network = Unet3Plus(n_channels)
 
@@ -56,6 +57,8 @@ class UnetModule(pl.LightningModule):
             patches, coords, filenames, slice_idx
         ):
             if torch.all(patch == 0):
+                continue
+            if coord[0] > self.cutoff_height:
                 continue
             output = (
                 resize(F.sigmoid(self(patch.unsqueeze(0))))
@@ -98,7 +101,7 @@ class UnetModule(pl.LightningModule):
             f = os.path.join(
                 self.data_root,
                 f"{mode}-pred-masks",
-                filename.replace("label.nii", "pred_mask.npy"),
+                filename.replace("label.nii", "pred_mask.npy").replace(".gz", ""),
             )
             recon = np.load(f)
             recon_original_shape = recon.shape
@@ -106,6 +109,7 @@ class UnetModule(pl.LightningModule):
             recon_side = recon.shape[-1]
             p = (recon_side - masks.shape[-1]) // 2
             recon = recon[:, p : recon_side - p, p : recon_side - p]
+            recon[self.cutoff_height:] = 0
             for threshold in thresholds:
                 dice_scores.setdefault(threshold, [])
                 pred = (recon > threshold).astype(float)

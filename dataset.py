@@ -1,13 +1,10 @@
 import ast
 import os
 
-import matplotlib.pyplot as plt
 import nibabel as nib
 import numpy as np
 import pandas as pd
 import torch
-from skimage import morphology
-from skimage.morphology import area_closing, dilation, erosion, opening
 from torch.utils.data import Dataset
 from torch.utils.data.sampler import Sampler
 from torchvision import transforms
@@ -23,6 +20,7 @@ class RibFracDataset(Dataset):
         patch_original_size: int,
         patch_final_size: int,
         proportion_fracture_in_patch: float,
+        cutoff_height: int,
         clip_min_val: int,
         clip_max_val: int,
         test_stride: int,
@@ -36,6 +34,7 @@ class RibFracDataset(Dataset):
         self.context_size = context_size
         self.patch_original_size = patch_original_size
         self.proportion_fracture_in_patch = proportion_fracture_in_patch
+        self.cutoff_height = cutoff_height
         self.clip_min_val = clip_min_val
         self.clip_max_val = clip_max_val
         self.test_stride = test_stride
@@ -198,8 +197,6 @@ class RibFracDataset(Dataset):
         p = self.patch_original_size // 2
         img = torch.nn.functional.pad(img, (p, p, p, p), mode="constant", value=0)
 
-        # img = remove_backplate(img, plot_interm=False)  # TODO: fix using dataset_train_debug.ipynb
-
         return img
 
     def create_train_patch(self, img, mask, is_fracture_slice):
@@ -209,10 +206,17 @@ class RibFracDataset(Dataset):
         middle = self.context_size
         # Get all bone pixel locations
         coords = torch.stack(torch.where(img[middle] > 0.05), dim=1)
+        coords = coords[coords[:, 0] < self.cutoff_height]
+
+        offset_range = int(0.25*self.patch_original_size)
+        random_offset = np.random.randint(-offset_range, offset_range, (2,))
 
         if is_fracture_slice:
             # Look for patch with sufficient fracture pixels
             for random_coord in np.random.permutation(coords):
+                random_coord += random_offset
+                if random_coord[0] >= (img.shape[-1] - self.patch_original_size//2) or random_coord[1] >= (img.shape[-1] - self.patch_original_size//2):
+                    continue
                 img_patch = crop_patch(img, random_coord, self.patch_original_size)
                 mask_patch = crop_patch(mask, random_coord, self.patch_original_size)
                 if (
@@ -223,6 +227,9 @@ class RibFracDataset(Dataset):
         else:
             # Look for patch with no fracture pixels
             for random_coord in np.random.permutation(coords):
+                random_coord += random_offset
+                if random_coord[0] >= (img.shape[-1] - self.patch_original_size//2) or random_coord[1] >= (img.shape[-1] - self.patch_original_size//2):
+                    continue
                 img_patch = crop_patch(img, random_coord, self.patch_original_size)
                 mask_patch = crop_patch(mask, random_coord, self.patch_original_size)
                 if torch.sum(mask_patch) == 0:
@@ -421,68 +428,3 @@ def crop_patch(image, center_coord, patch_size):
         center_coord[1] - patch_size // 2 : center_coord[1] + patch_size // 2,
     ]
     return patch
-
-
-def remove_backplate(image_2d, plot_interm=False):
-    """
-    From a 2d (axial) slice, remove the backplate,
-    by removing the largest object
-
-    Assume image_2d = np.clip(image_2d, 100, 1600) has been done
-    """
-
-    square = np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1]])
-
-    def multi_dil(im, num, element=square):
-        for i in range(num):
-            im = dilation(im, element)
-        return im
-
-    def multi_ero(im, num, element=square):
-        for i in range(num):
-            im = erosion(im, element)
-        return im
-
-    binarized_axial_image = np.where(image_2d > 190, 1, 0)
-
-    multi_dilated = multi_dil(binarized_axial_image, 7)
-    area_closed = area_closing(multi_dilated, 50000)
-    multi_eroded = multi_ero(area_closed, 7)
-    opened = opening(multi_eroded)
-
-    # Label the connected components in the segmented image
-    labeled_image, num_labels = morphology.label(
-        opened, connectivity=2, return_num=True
-    )
-
-    # Calculate the size of each labeled object
-    object_sizes = np.bincount(labeled_image.ravel())
-
-    # Find the label corresponding to the largest object
-    largest_object_label = (
-        np.argmax(object_sizes[1:]) + 1
-    )  # +1 to account for background label 0
-
-    # Create a mask to remove the largest object
-    mask = labeled_image == largest_object_label
-
-    # Remove the largest object by setting its pixels to 0
-    filtered_image = image_2d.copy()
-    filtered_image[mask] = max(0, np.min(filtered_image))
-
-    if plot_interm:
-        plt.imshow(binarized_axial_image)
-        plt.show()
-
-        plt.imshow(opened)
-        plt.show()
-
-        clipped_idk = np.where(filtered_image > 130, 1, 0)
-        plt.imshow(clipped_idk)
-        plt.show()
-
-        plt.imshow(filtered_image)
-        plt.title("Segmented Image with Largest Object Removed")
-        plt.show()
-
-    return filtered_image

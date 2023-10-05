@@ -13,6 +13,7 @@ class ConfigTrain:
     patch_original_size: int
     patch_final_size: int
     proportion_fracture_in_patch: float
+    cutoff_height: int
     clip_min_val: int
     clip_max_val: int
     test_stride: int

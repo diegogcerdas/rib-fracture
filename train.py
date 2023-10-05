@@ -41,6 +41,12 @@ if __name__ == "__main__":
         help="Proportion of fracture pixels in a patch.",
     )
     parser.add_argument(
+        "--cutoff-height",
+        type=int,
+        default=460,
+        help="Height value to remove backplate.",
+    )
+    parser.add_argument(
         "--clip-min-val",
         type=int,
         default=100,
@@ -49,7 +55,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--clip-max-val",
         type=int,
-        default=8000,
+        default=2000,
         help="Upper threshold to clip intensity values.",
     )
     parser.add_argument(
@@ -66,7 +72,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--context-size",
         type=int,
-        default=32,
+        default=8,
         help="Number of slices above and below the middle slice.",
     )
 
@@ -104,6 +110,7 @@ if __name__ == "__main__":
         patch_original_size=cfg.patch_original_size,
         patch_final_size=cfg.patch_final_size,
         proportion_fracture_in_patch=cfg.proportion_fracture_in_patch,
+        cutoff_height=cfg.cutoff_height,
         clip_min_val=cfg.clip_min_val,
         clip_max_val=cfg.clip_max_val,
         test_stride=cfg.test_stride,
@@ -126,6 +133,7 @@ if __name__ == "__main__":
         patch_original_size=cfg.patch_original_size,
         patch_final_size=cfg.patch_final_size,
         proportion_fracture_in_patch=cfg.proportion_fracture_in_patch,
+        cutoff_height=cfg.cutoff_height,
         clip_min_val=cfg.clip_min_val,
         clip_max_val=cfg.clip_max_val,
         test_stride=cfg.test_stride,
