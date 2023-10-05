@@ -123,7 +123,8 @@ class UnetModule(pl.LightningModule):
                     pred.sum() + masks.sum() + smooth
                 )
                 dice_scores[threshold].append(dice)
-            np.save(f, np.zeros(recon_original_shape))
+            os.remove(f)
+            np.save(f, np.zeros(recon_original_shape).astype(np.float16))
 
         for threshold in thresholds:
             dice_scores[threshold] = np.mean(dice_scores[threshold])
