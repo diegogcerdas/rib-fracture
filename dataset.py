@@ -139,7 +139,8 @@ class RibFracDataset(Dataset):
                 f"{self.partition}-pred-masks",
                 os.path.basename(filename)
                 .replace("image", "pred_mask")
-                .replace(".nii", ".npy"),
+                .replace(".nii", ".npy")
+                .replace(".gz", ""),
             )
 
             if self.debug:
@@ -191,7 +192,7 @@ class RibFracDataset(Dataset):
         img = img.clip(self.clip_min_val, self.clip_max_val)
 
         # Rescale values (minmax normalization)
-        img = (img - img.min()) / (img.max() - img.min())
+        img = (img - self.clip_min_val) / (self.clip_max_val - self.clip_min_val)
 
         # Pad image to allow for patches on the edge
         p = self.patch_original_size // 2
@@ -207,7 +208,7 @@ class RibFracDataset(Dataset):
         # Get middle slice index
         middle = self.context_size
         # Get all bone pixel locations
-        coords = torch.stack(torch.where(img[middle] > 0), dim=1)
+        coords = torch.stack(torch.where(img[middle] > 0.05), dim=1)
 
         if is_fracture_slice:
             # Look for patch with sufficient fracture pixels
@@ -287,6 +288,7 @@ class RibFracDataset(Dataset):
                 os.path.basename(img_filename)
                 .replace("image", "pred_mask")
                 .replace(".nii", ".npy")
+                .replace(".gz", "")
             )
             if os.path.exists(os.path.join(pred_dir, filename)):
                 continue

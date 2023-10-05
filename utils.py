@@ -9,6 +9,7 @@ from dataset import BalancedFractureSampler
 @dataclass
 class ConfigTrain:
     data_root: str
+    ckpt_root: str
     patch_original_size: int
     patch_final_size: int
     proportion_fracture_in_patch: float
@@ -26,7 +27,7 @@ class ConfigTrain:
     max_epochs: int
     device: str
     do_wandb: bool
-    wandb_name: str
+    exp_name: str
     wandb_project: str
     wandb_entity: str
     wandb_mode: str

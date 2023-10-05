@@ -6,6 +6,7 @@ import torch
 import torch.utils.data as data
 import wandb
 from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 from dataset import RibFracDataset
 from model import UnetModule
@@ -17,6 +18,9 @@ if __name__ == "__main__":
     # Data Parameters
     parser.add_argument(
         "--data-root", type=str, default="./data/", help="Root directory for data."
+    )
+    parser.add_argument(
+        "--ckpt-root", type=str, default="./checkpoints/", help="Root directory for checkpoints."
     )
     parser.add_argument(
         "--patch-original-size",
@@ -74,6 +78,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size-test", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=18)
     parser.add_argument("--max-epochs", type=int, default=1000)
+    parser.add_argument("--exp-name", type=str, default="test-run")
     parser.add_argument(
         "--device",
         type=str,
@@ -84,7 +89,6 @@ if __name__ == "__main__":
 
     # WandB Parameters
     parser.add_argument("--do-wandb", action=BooleanOptionalAction, default=False)
-    parser.add_argument("--wandb-name", type=str, default="test-run")
     parser.add_argument("--wandb-project", type=str, default="rib-frac")
     parser.add_argument("--wandb-entity", type=str, default="diego-gcerdas")
     parser.add_argument("--wandb-mode", type=str, default="online")
@@ -144,11 +148,12 @@ if __name__ == "__main__":
     )
 
     logger = []
-    callbacks = [SetEpochCallback(train_sampler)]
+    checkpoint_callback = ModelCheckpoint(dirpath=f'{cfg.ckpt_root}/{cfg.exp_name}', save_top_k=1, monitor="val_dice_coeff_0.5")
+    callbacks = [SetEpochCallback(train_sampler), checkpoint_callback]
 
     if cfg.do_wandb:
         wandb.init(
-            name=cfg.wandb_name,
+            name=cfg.exp_name,
             project=cfg.wandb_project,
             entity=cfg.wandb_entity,
             mode=cfg.wandb_mode,
