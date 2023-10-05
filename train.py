@@ -37,7 +37,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--proportion-fracture-in-patch",
         type=float,
-        default=0.05,
+        default=0.01,
         help="Proportion of fracture pixels in a patch.",
     )
     parser.add_argument(
