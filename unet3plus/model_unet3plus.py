@@ -1,130 +1,10 @@
-import numpy as np
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from torch.nn import init
 import torch.nn.functional as F
-import torchvision.transforms as transforms
-from torch import nn, optim
+
 from unet3plus.init_weights import init_weights
-from unet3plus.loss import BCE_loss, IOU_loss, MSSSIM
 
-class Unet3PlusModule(pl.LightningModule):
-    def __init__(
-        self, n_channels: int, learning_rate: float, weight_decay: float, data_root: str
-    ):
-        super(Unet3PlusModule, self).__init__()
-        self.save_hyperparameters()
 
-        self.learning_rate = learning_rate
-        self.weight_decay = weight_decay
-        self.data_root = data_root
-
-        self.network = Unet3Plus(n_channels)
-
-    def forward(self, x):
-        return self.network(x)
-
-    def configure_optimizers(self):
-        optimizer = optim.RMSprop(
-            self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
-        )
-        return optimizer
-
-    def compute_loss(self, batch, mode):
-        x, y = batch
-        y_hat = self(x)
-        loss = F.binary_cross_entropy_with_logits(y_hat, y)
-        self.log_stat(f"{mode}_bce_loss", loss)
-        return loss
-
-    def update_pred_masks(self, batch, mode):
-        patches, coords, filenames, slice_idx, pts = batch
-        coords = torch.stack(coords).transpose(0, 1)
-        patch_original_size = pts[0].item()
-        p = patch_original_size // 2
-        resize = transforms.Resize(patch_original_size)
-
-        open_files = {}
-        for patch, coord, filename, slice_i in zip(
-            patches, coords, filenames, slice_idx
-        ):
-            if torch.all(patch == 0):
-                continue
-            output = resize(self(patch.unsqueeze(0))).squeeze().detach().cpu().numpy()
-            ix, iy = coord
-
-            if filename not in open_files:
-                open_files[filename] = np.load(filename)
-            open_files[filename][
-                0,
-                slice_i,
-                ix - p : ix + p,
-                iy - p : iy + p,
-            ] += output
-            open_files[filename][
-                1,
-                slice_i,
-                ix - p : ix + p,
-                iy - p : iy + p,
-            ] += 1
-
-        for filename in open_files.keys():
-            np.save(filename, open_files[filename])
-
-    def compute_eval(self, mode):
-        thresholds = np.linspace(0, 1, 11)
-        smooth = 1e-6
-        dice = {}
-
-        for filename in os.listdir(
-            os.path.join(self.data_root, f"ribfrac-{mode}-labels")
-        ):
-            f = os.path.join(self.data_root, f"ribfrac-{mode}-labels", filename)
-            masks = nib.load(f).get_fdata().T.astype(int)
-            f = os.path.join(
-                self.data_root,
-                f"{mode}-pred-masks",
-                filename.replace("label.nii", "pred_mask.npy"),
-            )
-            recon = np.load(f)
-            for threshold in thresholds:
-                dice.setdefault(threshold, [])
-                pred = (recon > threshold).float()
-                dice = (2 * (pred * masks).sum() + smooth) / (
-                    pred.sum() + masks.sum() + smooth
-                )
-                dice[threshold].append(dice)
-
-        for threshold in thresholds:
-            dice[threshold] = np.mean(dice[threshold])
-            self.log_stat(
-                f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice[threshold]
-            )
-
-    def log_stat(self, name, stat):
-        self.log(
-            name,
-            stat,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-        )
-
-    def training_step(self, batch, batch_idx):
-        loss = self.compute_loss(batch, "train")
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        self.update_pred_masks(batch, "val")
-
-    def on_validation_epoch_end(self) -> None:
-        self.compute_eval("val")
-
-'''
-    UNet 3+
-'''
 class Unet3Plus(nn.Module):
     """
     Based on https://github.com/ZJUGiveLab/UNet-Version/blob/master/models/UNet_3Plus.py
@@ -137,9 +17,11 @@ class Unet3Plus(nn.Module):
         self.is_batchnorm = is_batchnorm
 
         filters = [64, 128, 256, 512, 1024]
-        
+
         class unetConv2(nn.Module):
-            def __init__(self, in_size, out_size, is_batchnorm, n=2, ks=3, stride=1, padding=1):
+            def __init__(
+                self, in_size, out_size, is_batchnorm, n=2, ks=3, stride=1, padding=1
+            ):
                 super(unetConv2, self).__init__()
                 self.n = n
                 self.ks = ks
@@ -149,27 +31,31 @@ class Unet3Plus(nn.Module):
                 p = padding
                 if is_batchnorm:
                     for i in range(1, n + 1):
-                        conv = nn.Sequential(nn.Conv2d(in_size, out_size, ks, s, p),
-                                            nn.BatchNorm2d(out_size),
-                                            nn.ReLU(inplace=True), )
-                        setattr(self, 'conv%d' % i, conv)
+                        conv = nn.Sequential(
+                            nn.Conv2d(in_size, out_size, ks, s, p),
+                            nn.BatchNorm2d(out_size),
+                            nn.ReLU(inplace=True),
+                        )
+                        setattr(self, "conv%d" % i, conv)
                         in_size = out_size
 
                 else:
                     for i in range(1, n + 1):
-                        conv = nn.Sequential(nn.Conv2d(in_size, out_size, ks, s, p),
-                                            nn.ReLU(inplace=True), )
-                        setattr(self, 'conv%d' % i, conv)
+                        conv = nn.Sequential(
+                            nn.Conv2d(in_size, out_size, ks, s, p),
+                            nn.ReLU(inplace=True),
+                        )
+                        setattr(self, "conv%d" % i, conv)
                         in_size = out_size
 
                 # initialise the blocks
                 for m in self.children():
-                    init_weights(m, init_type='kaiming')
+                    init_weights(m, init_type="kaiming")
 
             def forward(self, inputs):
                 x = inputs
                 for i in range(1, self.n + 1):
-                    conv = getattr(self, 'conv%d' % i)
+                    conv = getattr(self, "conv%d" % i)
                     x = conv(x)
 
                 return x
@@ -194,7 +80,7 @@ class Unet3Plus(nn.Module):
         self.CatBlocks = 5
         self.UpChannels = self.CatChannels * self.CatBlocks
 
-        '''stage 4d'''
+        """stage 4d"""
         # h1->320*320, hd4->40*40, Pooling 8 times
         self.h1_PT_hd4 = nn.MaxPool2d(8, 8, ceil_mode=True)
         self.h1_PT_hd4_conv = nn.Conv2d(filters[0], self.CatChannels, 3, padding=1)
@@ -219,7 +105,7 @@ class Unet3Plus(nn.Module):
         self.h4_Cat_hd4_relu = nn.ReLU(inplace=True)
 
         # hd5->20*20, hd4->40*40, Upsample 2 times
-        self.hd5_UT_hd4 = nn.Upsample(scale_factor=2, mode='bilinear')  # 14*14
+        self.hd5_UT_hd4 = nn.Upsample(scale_factor=2, mode="bilinear")  # 14*14
         self.hd5_UT_hd4_conv = nn.Conv2d(filters[4], self.CatChannels, 3, padding=1)
         self.hd5_UT_hd4_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd5_UT_hd4_relu = nn.ReLU(inplace=True)
@@ -229,7 +115,7 @@ class Unet3Plus(nn.Module):
         self.bn4d_1 = nn.BatchNorm2d(self.UpChannels)
         self.relu4d_1 = nn.ReLU(inplace=True)
 
-        '''stage 3d'''
+        """stage 3d"""
         # h1->320*320, hd3->80*80, Pooling 4 times
         self.h1_PT_hd3 = nn.MaxPool2d(4, 4, ceil_mode=True)
         self.h1_PT_hd3_conv = nn.Conv2d(filters[0], self.CatChannels, 3, padding=1)
@@ -248,13 +134,15 @@ class Unet3Plus(nn.Module):
         self.h3_Cat_hd3_relu = nn.ReLU(inplace=True)
 
         # hd4->40*40, hd4->80*80, Upsample 2 times
-        self.hd4_UT_hd3 = nn.Upsample(scale_factor=2, mode='bilinear')  # 14*14
-        self.hd4_UT_hd3_conv = nn.Conv2d(self.UpChannels, self.CatChannels, 3, padding=1)
+        self.hd4_UT_hd3 = nn.Upsample(scale_factor=2, mode="bilinear")  # 14*14
+        self.hd4_UT_hd3_conv = nn.Conv2d(
+            self.UpChannels, self.CatChannels, 3, padding=1
+        )
         self.hd4_UT_hd3_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd4_UT_hd3_relu = nn.ReLU(inplace=True)
 
         # hd5->20*20, hd4->80*80, Upsample 4 times
-        self.hd5_UT_hd3 = nn.Upsample(scale_factor=4, mode='bilinear')  # 14*14
+        self.hd5_UT_hd3 = nn.Upsample(scale_factor=4, mode="bilinear")  # 14*14
         self.hd5_UT_hd3_conv = nn.Conv2d(filters[4], self.CatChannels, 3, padding=1)
         self.hd5_UT_hd3_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd5_UT_hd3_relu = nn.ReLU(inplace=True)
@@ -264,7 +152,7 @@ class Unet3Plus(nn.Module):
         self.bn3d_1 = nn.BatchNorm2d(self.UpChannels)
         self.relu3d_1 = nn.ReLU(inplace=True)
 
-        '''stage 2d '''
+        """stage 2d """
         # h1->320*320, hd2->160*160, Pooling 2 times
         self.h1_PT_hd2 = nn.MaxPool2d(2, 2, ceil_mode=True)
         self.h1_PT_hd2_conv = nn.Conv2d(filters[0], self.CatChannels, 3, padding=1)
@@ -277,19 +165,23 @@ class Unet3Plus(nn.Module):
         self.h2_Cat_hd2_relu = nn.ReLU(inplace=True)
 
         # hd3->80*80, hd2->160*160, Upsample 2 times
-        self.hd3_UT_hd2 = nn.Upsample(scale_factor=2, mode='bilinear')  # 14*14
-        self.hd3_UT_hd2_conv = nn.Conv2d(self.UpChannels, self.CatChannels, 3, padding=1)
+        self.hd3_UT_hd2 = nn.Upsample(scale_factor=2, mode="bilinear")  # 14*14
+        self.hd3_UT_hd2_conv = nn.Conv2d(
+            self.UpChannels, self.CatChannels, 3, padding=1
+        )
         self.hd3_UT_hd2_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd3_UT_hd2_relu = nn.ReLU(inplace=True)
 
         # hd4->40*40, hd2->160*160, Upsample 4 times
-        self.hd4_UT_hd2 = nn.Upsample(scale_factor=4, mode='bilinear')  # 14*14
-        self.hd4_UT_hd2_conv = nn.Conv2d(self.UpChannels, self.CatChannels, 3, padding=1)
+        self.hd4_UT_hd2 = nn.Upsample(scale_factor=4, mode="bilinear")  # 14*14
+        self.hd4_UT_hd2_conv = nn.Conv2d(
+            self.UpChannels, self.CatChannels, 3, padding=1
+        )
         self.hd4_UT_hd2_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd4_UT_hd2_relu = nn.ReLU(inplace=True)
 
         # hd5->20*20, hd2->160*160, Upsample 8 times
-        self.hd5_UT_hd2 = nn.Upsample(scale_factor=8, mode='bilinear')  # 14*14
+        self.hd5_UT_hd2 = nn.Upsample(scale_factor=8, mode="bilinear")  # 14*14
         self.hd5_UT_hd2_conv = nn.Conv2d(filters[4], self.CatChannels, 3, padding=1)
         self.hd5_UT_hd2_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd5_UT_hd2_relu = nn.ReLU(inplace=True)
@@ -299,32 +191,38 @@ class Unet3Plus(nn.Module):
         self.bn2d_1 = nn.BatchNorm2d(self.UpChannels)
         self.relu2d_1 = nn.ReLU(inplace=True)
 
-        '''stage 1d'''
+        """stage 1d"""
         # h1->320*320, hd1->320*320, Concatenation
         self.h1_Cat_hd1_conv = nn.Conv2d(filters[0], self.CatChannels, 3, padding=1)
         self.h1_Cat_hd1_bn = nn.BatchNorm2d(self.CatChannels)
         self.h1_Cat_hd1_relu = nn.ReLU(inplace=True)
 
         # hd2->160*160, hd1->320*320, Upsample 2 times
-        self.hd2_UT_hd1 = nn.Upsample(scale_factor=2, mode='bilinear')  # 14*14
-        self.hd2_UT_hd1_conv = nn.Conv2d(self.UpChannels, self.CatChannels, 3, padding=1)
+        self.hd2_UT_hd1 = nn.Upsample(scale_factor=2, mode="bilinear")  # 14*14
+        self.hd2_UT_hd1_conv = nn.Conv2d(
+            self.UpChannels, self.CatChannels, 3, padding=1
+        )
         self.hd2_UT_hd1_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd2_UT_hd1_relu = nn.ReLU(inplace=True)
 
         # hd3->80*80, hd1->320*320, Upsample 4 times
-        self.hd3_UT_hd1 = nn.Upsample(scale_factor=4, mode='bilinear')  # 14*14
-        self.hd3_UT_hd1_conv = nn.Conv2d(self.UpChannels, self.CatChannels, 3, padding=1)
+        self.hd3_UT_hd1 = nn.Upsample(scale_factor=4, mode="bilinear")  # 14*14
+        self.hd3_UT_hd1_conv = nn.Conv2d(
+            self.UpChannels, self.CatChannels, 3, padding=1
+        )
         self.hd3_UT_hd1_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd3_UT_hd1_relu = nn.ReLU(inplace=True)
 
         # hd4->40*40, hd1->320*320, Upsample 8 times
-        self.hd4_UT_hd1 = nn.Upsample(scale_factor=8, mode='bilinear')  # 14*14
-        self.hd4_UT_hd1_conv = nn.Conv2d(self.UpChannels, self.CatChannels, 3, padding=1)
+        self.hd4_UT_hd1 = nn.Upsample(scale_factor=8, mode="bilinear")  # 14*14
+        self.hd4_UT_hd1_conv = nn.Conv2d(
+            self.UpChannels, self.CatChannels, 3, padding=1
+        )
         self.hd4_UT_hd1_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd4_UT_hd1_relu = nn.ReLU(inplace=True)
 
         # hd5->20*20, hd1->320*320, Upsample 16 times
-        self.hd5_UT_hd1 = nn.Upsample(scale_factor=16, mode='bilinear')  # 14*14
+        self.hd5_UT_hd1 = nn.Upsample(scale_factor=16, mode="bilinear")  # 14*14
         self.hd5_UT_hd1_conv = nn.Conv2d(filters[4], self.CatChannels, 3, padding=1)
         self.hd5_UT_hd1_bn = nn.BatchNorm2d(self.CatChannels)
         self.hd5_UT_hd1_relu = nn.ReLU(inplace=True)
@@ -340,9 +238,9 @@ class Unet3Plus(nn.Module):
         # initialise weights
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                init_weights(m, init_type='kaiming')
+                init_weights(m, init_type="kaiming")
             elif isinstance(m, nn.BatchNorm2d):
-                init_weights(m, init_type='kaiming')
+                init_weights(m, init_type="kaiming")
 
     def forward(self, inputs):
         ## -------------Encoder-------------
@@ -361,37 +259,97 @@ class Unet3Plus(nn.Module):
         hd5 = self.conv5(h5)  # h5->20*20*1024
 
         ## -------------Decoder-------------
-        h1_PT_hd4 = self.h1_PT_hd4_relu(self.h1_PT_hd4_bn(self.h1_PT_hd4_conv(self.h1_PT_hd4(h1))))
-        h2_PT_hd4 = self.h2_PT_hd4_relu(self.h2_PT_hd4_bn(self.h2_PT_hd4_conv(self.h2_PT_hd4(h2))))
-        h3_PT_hd4 = self.h3_PT_hd4_relu(self.h3_PT_hd4_bn(self.h3_PT_hd4_conv(self.h3_PT_hd4(h3))))
+        h1_PT_hd4 = self.h1_PT_hd4_relu(
+            self.h1_PT_hd4_bn(self.h1_PT_hd4_conv(self.h1_PT_hd4(h1)))
+        )
+        h2_PT_hd4 = self.h2_PT_hd4_relu(
+            self.h2_PT_hd4_bn(self.h2_PT_hd4_conv(self.h2_PT_hd4(h2)))
+        )
+        h3_PT_hd4 = self.h3_PT_hd4_relu(
+            self.h3_PT_hd4_bn(self.h3_PT_hd4_conv(self.h3_PT_hd4(h3)))
+        )
         h4_Cat_hd4 = self.h4_Cat_hd4_relu(self.h4_Cat_hd4_bn(self.h4_Cat_hd4_conv(h4)))
-        hd5_UT_hd4 = self.hd5_UT_hd4_relu(self.hd5_UT_hd4_bn(self.hd5_UT_hd4_conv(self.hd5_UT_hd4(hd5))))
-        hd4 = self.relu4d_1(self.bn4d_1(self.conv4d_1(
-            torch.cat((h1_PT_hd4, h2_PT_hd4, h3_PT_hd4, h4_Cat_hd4, hd5_UT_hd4), 1)))) # hd4->40*40*UpChannels
+        hd5_UT_hd4 = self.hd5_UT_hd4_relu(
+            self.hd5_UT_hd4_bn(self.hd5_UT_hd4_conv(self.hd5_UT_hd4(hd5)))
+        )
+        hd4 = self.relu4d_1(
+            self.bn4d_1(
+                self.conv4d_1(
+                    torch.cat(
+                        (h1_PT_hd4, h2_PT_hd4, h3_PT_hd4, h4_Cat_hd4, hd5_UT_hd4), 1
+                    )
+                )
+            )
+        )  # hd4->40*40*UpChannels
 
-        h1_PT_hd3 = self.h1_PT_hd3_relu(self.h1_PT_hd3_bn(self.h1_PT_hd3_conv(self.h1_PT_hd3(h1))))
-        h2_PT_hd3 = self.h2_PT_hd3_relu(self.h2_PT_hd3_bn(self.h2_PT_hd3_conv(self.h2_PT_hd3(h2))))
+        h1_PT_hd3 = self.h1_PT_hd3_relu(
+            self.h1_PT_hd3_bn(self.h1_PT_hd3_conv(self.h1_PT_hd3(h1)))
+        )
+        h2_PT_hd3 = self.h2_PT_hd3_relu(
+            self.h2_PT_hd3_bn(self.h2_PT_hd3_conv(self.h2_PT_hd3(h2)))
+        )
         h3_Cat_hd3 = self.h3_Cat_hd3_relu(self.h3_Cat_hd3_bn(self.h3_Cat_hd3_conv(h3)))
-        hd4_UT_hd3 = self.hd4_UT_hd3_relu(self.hd4_UT_hd3_bn(self.hd4_UT_hd3_conv(self.hd4_UT_hd3(hd4))))
-        hd5_UT_hd3 = self.hd5_UT_hd3_relu(self.hd5_UT_hd3_bn(self.hd5_UT_hd3_conv(self.hd5_UT_hd3(hd5))))
-        hd3 = self.relu3d_1(self.bn3d_1(self.conv3d_1(
-            torch.cat((h1_PT_hd3, h2_PT_hd3, h3_Cat_hd3, hd4_UT_hd3, hd5_UT_hd3), 1)))) # hd3->80*80*UpChannels
+        hd4_UT_hd3 = self.hd4_UT_hd3_relu(
+            self.hd4_UT_hd3_bn(self.hd4_UT_hd3_conv(self.hd4_UT_hd3(hd4)))
+        )
+        hd5_UT_hd3 = self.hd5_UT_hd3_relu(
+            self.hd5_UT_hd3_bn(self.hd5_UT_hd3_conv(self.hd5_UT_hd3(hd5)))
+        )
+        hd3 = self.relu3d_1(
+            self.bn3d_1(
+                self.conv3d_1(
+                    torch.cat(
+                        (h1_PT_hd3, h2_PT_hd3, h3_Cat_hd3, hd4_UT_hd3, hd5_UT_hd3), 1
+                    )
+                )
+            )
+        )  # hd3->80*80*UpChannels
 
-        h1_PT_hd2 = self.h1_PT_hd2_relu(self.h1_PT_hd2_bn(self.h1_PT_hd2_conv(self.h1_PT_hd2(h1))))
+        h1_PT_hd2 = self.h1_PT_hd2_relu(
+            self.h1_PT_hd2_bn(self.h1_PT_hd2_conv(self.h1_PT_hd2(h1)))
+        )
         h2_Cat_hd2 = self.h2_Cat_hd2_relu(self.h2_Cat_hd2_bn(self.h2_Cat_hd2_conv(h2)))
-        hd3_UT_hd2 = self.hd3_UT_hd2_relu(self.hd3_UT_hd2_bn(self.hd3_UT_hd2_conv(self.hd3_UT_hd2(hd3))))
-        hd4_UT_hd2 = self.hd4_UT_hd2_relu(self.hd4_UT_hd2_bn(self.hd4_UT_hd2_conv(self.hd4_UT_hd2(hd4))))
-        hd5_UT_hd2 = self.hd5_UT_hd2_relu(self.hd5_UT_hd2_bn(self.hd5_UT_hd2_conv(self.hd5_UT_hd2(hd5))))
-        hd2 = self.relu2d_1(self.bn2d_1(self.conv2d_1(
-            torch.cat((h1_PT_hd2, h2_Cat_hd2, hd3_UT_hd2, hd4_UT_hd2, hd5_UT_hd2), 1)))) # hd2->160*160*UpChannels
+        hd3_UT_hd2 = self.hd3_UT_hd2_relu(
+            self.hd3_UT_hd2_bn(self.hd3_UT_hd2_conv(self.hd3_UT_hd2(hd3)))
+        )
+        hd4_UT_hd2 = self.hd4_UT_hd2_relu(
+            self.hd4_UT_hd2_bn(self.hd4_UT_hd2_conv(self.hd4_UT_hd2(hd4)))
+        )
+        hd5_UT_hd2 = self.hd5_UT_hd2_relu(
+            self.hd5_UT_hd2_bn(self.hd5_UT_hd2_conv(self.hd5_UT_hd2(hd5)))
+        )
+        hd2 = self.relu2d_1(
+            self.bn2d_1(
+                self.conv2d_1(
+                    torch.cat(
+                        (h1_PT_hd2, h2_Cat_hd2, hd3_UT_hd2, hd4_UT_hd2, hd5_UT_hd2), 1
+                    )
+                )
+            )
+        )  # hd2->160*160*UpChannels
 
         h1_Cat_hd1 = self.h1_Cat_hd1_relu(self.h1_Cat_hd1_bn(self.h1_Cat_hd1_conv(h1)))
-        hd2_UT_hd1 = self.hd2_UT_hd1_relu(self.hd2_UT_hd1_bn(self.hd2_UT_hd1_conv(self.hd2_UT_hd1(hd2))))
-        hd3_UT_hd1 = self.hd3_UT_hd1_relu(self.hd3_UT_hd1_bn(self.hd3_UT_hd1_conv(self.hd3_UT_hd1(hd3))))
-        hd4_UT_hd1 = self.hd4_UT_hd1_relu(self.hd4_UT_hd1_bn(self.hd4_UT_hd1_conv(self.hd4_UT_hd1(hd4))))
-        hd5_UT_hd1 = self.hd5_UT_hd1_relu(self.hd5_UT_hd1_bn(self.hd5_UT_hd1_conv(self.hd5_UT_hd1(hd5))))
-        hd1 = self.relu1d_1(self.bn1d_1(self.conv1d_1(
-            torch.cat((h1_Cat_hd1, hd2_UT_hd1, hd3_UT_hd1, hd4_UT_hd1, hd5_UT_hd1), 1)))) # hd1->320*320*UpChannels
+        hd2_UT_hd1 = self.hd2_UT_hd1_relu(
+            self.hd2_UT_hd1_bn(self.hd2_UT_hd1_conv(self.hd2_UT_hd1(hd2)))
+        )
+        hd3_UT_hd1 = self.hd3_UT_hd1_relu(
+            self.hd3_UT_hd1_bn(self.hd3_UT_hd1_conv(self.hd3_UT_hd1(hd3)))
+        )
+        hd4_UT_hd1 = self.hd4_UT_hd1_relu(
+            self.hd4_UT_hd1_bn(self.hd4_UT_hd1_conv(self.hd4_UT_hd1(hd4)))
+        )
+        hd5_UT_hd1 = self.hd5_UT_hd1_relu(
+            self.hd5_UT_hd1_bn(self.hd5_UT_hd1_conv(self.hd5_UT_hd1(hd5)))
+        )
+        hd1 = self.relu1d_1(
+            self.bn1d_1(
+                self.conv1d_1(
+                    torch.cat(
+                        (h1_Cat_hd1, hd2_UT_hd1, hd3_UT_hd1, hd4_UT_hd1, hd5_UT_hd1), 1
+                    )
+                )
+            )
+        )  # hd1->320*320*UpChannels
 
         d1 = self.outconv1(hd1)  # d1->320*320*n_classes
         return F.sigmoid(d1)

@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 import torch
 import torch.utils.data as data
 import wandb
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
 from dataset import RibFracDataset
@@ -17,6 +18,12 @@ if __name__ == "__main__":
     # Data Parameters
     parser.add_argument(
         "--data-root", type=str, default="./data/", help="Root directory for data."
+    )
+    parser.add_argument(
+        "--ckpt-root",
+        type=str,
+        default="./checkpoints/",
+        help="Root directory for checkpoints.",
     )
     parser.add_argument(
         "--patch-original-size",
@@ -33,19 +40,25 @@ if __name__ == "__main__":
     parser.add_argument(
         "--proportion-fracture-in-patch",
         type=float,
-        default=0.05,
+        default=0.01,
         help="Proportion of fracture pixels in a patch.",
+    )
+    parser.add_argument(
+        "--cutoff-height",
+        type=int,
+        default=450+32,
+        help="Height value to remove backplate. Make sure to consider padding.",
     )
     parser.add_argument(
         "--clip-min-val",
         type=int,
         default=100,
-        help="Lower threshold to clip intensity values",
+        help="Lower threshold to clip intensity values.",
     )
     parser.add_argument(
         "--clip-max-val",
         type=int,
-        default=8000,
+        default=2000,
         help="Upper threshold to clip intensity values.",
     )
     parser.add_argument(
@@ -62,7 +75,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--context-size",
         type=int,
-        default=32,
+        default=8,
         help="Number of slices above and below the middle slice.",
     )
 
@@ -74,6 +87,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size-test", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=18)
     parser.add_argument("--max-epochs", type=int, default=1000)
+    parser.add_argument("--exp-name", type=str, default="test-run")
     parser.add_argument(
         "--device",
         type=str,
@@ -84,7 +98,6 @@ if __name__ == "__main__":
 
     # WandB Parameters
     parser.add_argument("--do-wandb", action=BooleanOptionalAction, default=False)
-    parser.add_argument("--wandb-name", type=str, default="test-run")
     parser.add_argument("--wandb-project", type=str, default="rib-frac")
     parser.add_argument("--wandb-entity", type=str, default="diego-gcerdas")
     parser.add_argument("--wandb-mode", type=str, default="online")
@@ -100,6 +113,7 @@ if __name__ == "__main__":
         patch_original_size=cfg.patch_original_size,
         patch_final_size=cfg.patch_final_size,
         proportion_fracture_in_patch=cfg.proportion_fracture_in_patch,
+        cutoff_height=cfg.cutoff_height,
         clip_min_val=cfg.clip_min_val,
         clip_max_val=cfg.clip_max_val,
         test_stride=cfg.test_stride,
@@ -122,6 +136,7 @@ if __name__ == "__main__":
         patch_original_size=cfg.patch_original_size,
         patch_final_size=cfg.patch_final_size,
         proportion_fracture_in_patch=cfg.proportion_fracture_in_patch,
+        cutoff_height=cfg.cutoff_height,
         clip_min_val=cfg.clip_min_val,
         clip_max_val=cfg.clip_max_val,
         test_stride=cfg.test_stride,
@@ -140,15 +155,21 @@ if __name__ == "__main__":
         n_channels=1 + 2 * cfg.context_size,
         learning_rate=cfg.learning_rate,
         weight_decay=cfg.weight_decay,
+        cutoff_height=cfg.cutoff_height,
         data_root=cfg.data_root,
     )
 
     logger = []
-    callbacks = [SetEpochCallback(train_sampler)]
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=f"{cfg.ckpt_root}/{cfg.exp_name}",
+        save_top_k=1,
+        monitor="val_dice_coeff_0.5",
+    )
+    callbacks = [SetEpochCallback(train_sampler), checkpoint_callback]
 
     if cfg.do_wandb:
         wandb.init(
-            name=cfg.wandb_name,
+            name=cfg.exp_name,
             project=cfg.wandb_project,
             entity=cfg.wandb_entity,
             mode=cfg.wandb_mode,

@@ -1,4 +1,5 @@
 data/
+checkpoints/
 __pycache__/
 lightning_logs/
 wandb/
