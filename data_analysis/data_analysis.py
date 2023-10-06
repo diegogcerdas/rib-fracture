@@ -484,6 +484,7 @@ def analysis_pixel_values(images_path, fn_preprocess, align='top'):
     max_size = 721  # hardcoded from df_scan.describe()>size_z>max
     fit_size = 512  # hardcoded to match x and y, value in between min=239 and max=721
 
+    max_values = []
     sum_values = 0  # for mean
     sum_values2 = 0  # squared, for std
     tot_elem = 0  # total number of elements
@@ -506,6 +507,7 @@ def analysis_pixel_values(images_path, fn_preprocess, align='top'):
         raw_scan = nib.load(filepath).get_fdata().T.astype(float)
         scan = fn_preprocess(raw_scan)  # (z, x, y)
 
+        max_values.append(np.max(scan))
         sum_values += np.sum(scan)
         sum_values2 += np.sum(scan**2)
         tot_elem += scan.size
@@ -533,7 +535,7 @@ def analysis_pixel_values(images_path, fn_preprocess, align='top'):
 
     print('Done!')
 
-    return mean, std, cum_scans, avg_scan
+    return mean, std, cum_scans, avg_scan, max_values
 
 
 # connected components
@@ -546,28 +548,30 @@ def identify_components(img, struct_elem=SQUARE_STRUCT):
     img: 2d image
     elem: structuring element
     """
-    # binarized_axial_image = np.where(img > 0.05, 1, 0)  # FIXME: hardcoded threshold (190)
-    # multi_dilated = multi_dil(binarized_axial_image, 4)  # FIXME: hardcoded dilation (7)
-    # area_closed = morphology.area_closing(multi_dilated, 10000)  # FIXME: hardcoded area (50000)
-    # multi_eroded = multi_ero(area_closed, 1)  # FIXME: hardcoded erosion (7)
+
+    def multi_dil(im, num, element):
+        for i in range(num):
+            im = morphology.dilation(im, element)
+        return im
+
+    def multi_ero(im, num, element):
+        for i in range(num):
+            im = morphology.erosion(im, element)
+        return im
+
+    # thr = (190 - 100) / (1600 - 100)
+    # binarized_axial_image = np.where(img > 0.02, 1, 0)
+    # multi_dilated = multi_dil(binarized_axial_image, 7, element=struct_elem)
+    # area_closed = morphology.area_closing(multi_dilated, 50000)
+    # multi_eroded = multi_ero(area_closed, 7, element=struct_elem)
     # opened = morphology.opening(multi_eroded)
 
-    im = np.where(img > 0.04, 1, 0)
-    imshow(im, title='binarized')
-    im = morphology.closing(im, np.ones((5,5)))
-    imshow(im, title='closed')
-    im = remove_noise(im, kernel_size=3)
-    imshow(im, title='noise removed')
-    for _ in range(5):
-        im = morphology.dilation(im, np.ones((3,3)))
-    imshow(im, title='dilated')
-    im = morphology.area_closing(im, 50000)
-    imshow(im, title='area closed')
-    for _ in range(5):
-        im = morphology.erosion(im, np.ones((3,3)))
-    im = morphology.opening(im)
-    imshow(im, title='opened')
-    opened = im
+    thr = (140 - 100) / (1600 - 100)
+    binarized_axial_image = np.where(img > thr, 1, 0)
+    multi_dilated = multi_dil(binarized_axial_image, 7, element=struct_elem)
+    area_closed = morphology.area_closing(multi_dilated, 50000)
+    multi_eroded = multi_ero(area_closed, 6, element=struct_elem)
+    opened = morphology.opening(multi_eroded)
 
     # Label the connected components in the segmented image
     labeled_image, num_labels = morphology.label(opened, connectivity=2, return_num=True)
@@ -654,17 +658,12 @@ def analysis_conn_comp(images_path, fn_preprocess, struct_elem=SQUARE_STRUCT, ma
 
         for slice_idx in slice_idxs:
             slice_ = scan[slice_idx]
-
-            imshow(slice_, title=f'{public_id} - slice {slice_idx} - preprocessed')
-
             labeled_img, num_labels = identify_components(slice_, struct_elem=struct_elem)
-
-            imshow(labeled_img, title=f'{public_id} - slice {slice_idx} - labeled components')
-
             if num_labels == 0:
                 # no connected components other than background
                 continue
             largest_component_label = largest_component(labeled_img)
+
             for lab in range(num_labels):
                 mask = labeled_img == lab
                 min_x, max_x, min_y, max_y, ctr_x, ctr_y, com_x, com_y, area = get_mask_geometry(mask)
@@ -674,11 +673,13 @@ def analysis_conn_comp(images_path, fn_preprocess, struct_elem=SQUARE_STRUCT, ma
                      ctr_x, ctr_y, com_x, com_y, area]
                 )
 
-    df_conn_comp = pd.DataFrame(data_conn_comp, columns=[
-        'public_id', 'slice_idx', 'conn_comp_label', 'is_largest',
-        'min_x', 'max_x', 'min_y', 'max_y',
-        'ctr_x', 'ctr_y', 'com_x', 'com_y', 'area'
-    ])
+        # save ckpt to disk
+        df_conn_comp = pd.DataFrame(data_conn_comp, columns=[
+            'public_id', 'slice_idx', 'conn_comp_label', 'is_largest',
+            'min_x', 'max_x', 'min_y', 'max_y',
+            'ctr_x', 'ctr_y', 'com_x', 'com_y', 'area'
+        ])
+        df_conn_comp.to_csv('conn_comp_ckpt.csv', index=False)
 
     print('Done!')
 
@@ -721,21 +722,21 @@ def compute_or_load_pixel_analysis(analysis_root, images_path, fn_preprocess, al
         #cum_scan = np.load(cum_scans_path)
         avg_scan = np.load(avg_scan_path)
         params = load_params_json(params_path)
-        mean, std = params['mean'], params['std']
+        mean, std, max_values = params['mean'], params['std'], params['max_values']
         print('Loaded existing analysis')
     else:
         print('No existing analysis found, computing...')
-        mean, std, _, avg_scan = analysis_pixel_values(images_path, fn_preprocess, align=align)
+        mean, std, _, avg_scan, max_values = analysis_pixel_values(images_path, fn_preprocess, align=align)
         #np.save(cum_scans_path, cum_scan)
         np.save(avg_scan_path, avg_scan)
-        update_params_json(params_path, mean=mean, std=std)
+        update_params_json(params_path, mean=mean, std=std, max_values=max_values)
         print('Saved files:',
               params_path,
               #cum_scans_path,
               avg_scan_path,
               sep='\n\t')
 
-    return mean, std, None, avg_scan
+    return mean, std, None, avg_scan, max_values
 
 
 def compute_or_load_eq(analysis_root, cum_scan, avg_scan, *, align):
@@ -817,16 +818,18 @@ if __name__ == '__main__':
         First step of preprocessing: clip values (top and bottom) and minmax-normalize.
         """
         clip_min_val = 100  # design hyperparameter
-        clip_max_val = 8000  # design hyperparameter
+        clip_max_val = 1600  # design hyperparameter
         img = img.clip(clip_min_val, clip_max_val)
-        img = (img - img.min()) / (img.max() - img.min())
+        img = (img - clip_min_val) / (clip_max_val - clip_min_val)
         return img
 
     #rib_data = compute_rib_data([TRAIN_INFO])
 
     print('\nFRACTURE ANALYSIS')
     #_, _ = compute_or_load_fracture_analysis(ANALYSIS_ROOT, TRAIN_LABELS, rib_data)
-
+    
+    #mean, std, cum_scan_bottom, avg_scan_bottom, max_values = compute_or_load_pixel_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, lambda x: np.clip(x, 100, None), align='bottom')
+    
     print('\nPIXEL ANALYSIS')
     for align in ['top', 'bottom', 'center', 'fit']:
         break  # TODO: compute this!
@@ -835,5 +838,5 @@ if __name__ == '__main__':
         #_ = compute_or_load_eq(ANALYSIS_ROOT, cum_scan, avg_scan, align=align)  # TODO: tmp - ignore eq
 
     print('\nCONNECTED COMPONENTS ANALYSIS')
-    _ = compute_or_load_conn_comp_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, preprocess1, max_files=10, max_slices=50)
+    _ = compute_or_load_conn_comp_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, preprocess1, max_files=100, max_slices=50)
 
