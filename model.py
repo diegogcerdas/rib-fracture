@@ -39,6 +39,8 @@ class UnetModule(pl.LightningModule):
 
         if model_name == "unet3plus":
             self.network = Unet3Plus(n_channels)
+        # elif model_name == "unet3plus_deepsup":
+        #     self.network = UNet_3Plus_DeepSup(n_channels)
         elif model_name == "unet3plus_deep_sup_cgm":
             self.network = UNet_3Plus_DeepSup_CGM(n_channels)
         else:
@@ -56,12 +58,14 @@ class UnetModule(pl.LightningModule):
     def compute_loss(self, batch, mode):
         x, y = batch
 
+        # Without Classification guided model (CGM)
         if self.model_name == "unet3plus":
             y_hat = self(x)
             loss = F.binary_cross_entropy_with_logits(y_hat, y)
             self.log_stat(f"{mode}_bce_loss", loss)
             return loss
-        elif self.model_name == "unet3plus_deep_sup_cgm":
+        # With CGM
+        elif self.model_name == "unet3plus_deepsup" or self.model_name == "unet3plus_deepsup_cgm":
             is_frac = y.reshape(y.shape[0], -1).sum(dim=1) > 0 # is there a fracture in this patch?
             is_frac = is_frac.float()
             cls_branch, (d1), (d2), d3, (d4),(d5) = self(x)
@@ -72,6 +76,7 @@ class UnetModule(pl.LightningModule):
             img1 = torch.concatenate([d1, d2, d3, d4, d5])    
             img2 = torch.concatenate([y, y, y, y, y])
 
+            ## Hybrid loss: MSSSIM + IOU + FocalLoss
             loss_seg = MSSSIM()(img1, img2) + IOU()(img1, img2) + FocalLoss()(img1, img2)
              
             loss = loss_BCE + loss_seg  
