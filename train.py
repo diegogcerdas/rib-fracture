@@ -152,6 +152,7 @@ if __name__ == "__main__":
     )
 
     model = UnetModule(
+        model_name="unet3plus_deep_sup_cgm",  # unet3plus_deep_sup_cgm / unet3plus / unet3plus_deep_sup
         n_channels=1 + 2 * cfg.context_size,
         learning_rate=cfg.learning_rate,
         weight_decay=cfg.weight_decay,
