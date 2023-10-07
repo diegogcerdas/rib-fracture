@@ -46,14 +46,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cutoff-height",
         type=int,
-        default=492,
+        default=450+32,
         help="Height value to remove backplate. Make sure to consider padding.",
     )
     parser.add_argument(
         "--clip-min-val",
         type=int,
         default=100,
-        help="Lower threshold to clip intensity values",
+        help="Lower threshold to clip intensity values.",
     )
     parser.add_argument(
         "--clip-max-val",
