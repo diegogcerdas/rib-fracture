@@ -208,40 +208,54 @@ class RibFracDataset(Dataset):
         coords = torch.stack(torch.where(img[middle] > 0.05), dim=1)
         coords = coords[coords[:, 0] < self.cutoff_height]
 
-        offset_range = int(0.25 * self.patch_original_size)
+        offset_range = int(0.2 * self.patch_original_size)
         random_offset = np.random.randint(-offset_range, offset_range, (2,))
 
         if is_fracture_slice:
             # Look for patch with sufficient fracture pixels
             for random_coord in np.random.permutation(coords):
-                random_coord += random_offset
-                if random_coord[0] >= (
-                    img.shape[-1] - self.patch_original_size // 2
-                ) or random_coord[1] >= (img.shape[-1] - self.patch_original_size // 2):
+                random_coord_off = random_coord + random_offset
+                if random_coord_off[0] >= (img.shape[-1] - self.patch_original_size // 2):
                     continue
-                img_patch = crop_patch(img, random_coord, self.patch_original_size)
-                mask_patch = crop_patch(mask, random_coord, self.patch_original_size)
+                if random_coord_off[1] >= (img.shape[-1] - self.patch_original_size // 2):
+                    continue
+                if random_coord_off[0] <= (self.patch_original_size // 2):
+                    continue
+                if random_coord_off[1] <= (self.patch_original_size // 2):
+                    continue
+                img_patch = crop_patch(img, random_coord_off, self.patch_original_size)
+                mask_patch = crop_patch(mask, random_coord_off, self.patch_original_size)
                 if (
                     torch.sum(mask_patch) / mask_patch.numel()
                     > self.proportion_fracture_in_patch
                 ):
                     break
+                img_patch = crop_patch(img, random_coord, self.patch_original_size)
+                mask_patch = crop_patch(mask, random_coord, self.patch_original_size)
+                random_coord_off = random_coord
         else:
             # Look for patch with no fracture pixels
             for random_coord in np.random.permutation(coords):
-                random_coord += random_offset
-                if random_coord[0] >= (
-                    img.shape[-1] - self.patch_original_size // 2
-                ) or random_coord[1] >= (img.shape[-1] - self.patch_original_size // 2):
+                random_coord_off = random_coord + random_offset
+                if random_coord_off[0] >= (img.shape[-1] - self.patch_original_size // 2):
                     continue
-                img_patch = crop_patch(img, random_coord, self.patch_original_size)
-                mask_patch = crop_patch(mask, random_coord, self.patch_original_size)
+                if random_coord_off[1] >= (img.shape[-1] - self.patch_original_size // 2):
+                    continue
+                if random_coord_off[0] <= (self.patch_original_size // 2):
+                    continue
+                if random_coord_off[1] <= (self.patch_original_size // 2):
+                    continue
+                img_patch = crop_patch(img, random_coord_off, self.patch_original_size)
+                mask_patch = crop_patch(mask, random_coord_off, self.patch_original_size)
                 if torch.sum(mask_patch) == 0:
                     break
+                img_patch = crop_patch(img, random_coord, self.patch_original_size)
+                mask_patch = crop_patch(mask, random_coord, self.patch_original_size)
+                random_coord_off = random_coord
 
         # Normalize image patch
         img_patch = self.normalize(img_patch)
-        return img_patch, mask_patch, random_coord
+        return img_patch, mask_patch, random_coord_off
 
     def drop_slices_without_context(self):
         """Drop slices without sufficient context from the DataFrame."""
@@ -371,9 +385,10 @@ class BalancedFractureSampler(Sampler):
         self.data_info = data_info
         self.seed = seed
         self.epoch = 0
+        self.size = int(self.data_info[self.data_info.is_fracture_slice == True].shape[0] * 2)
 
     def __len__(self):
-        return self.data_info.shape[0]
+        return self.size
 
     def set_epoch(self, epoch):
         self.epoch = epoch
@@ -410,7 +425,7 @@ class TestSampler(Sampler):
         self.num_patches = num_patches
 
     def __len__(self):
-        return self.data_info.shape[0]
+        return int(self.data_info.shape[0] * self.num_patches)
 
     def set_epoch(self, epoch):
         self.epoch = epoch
