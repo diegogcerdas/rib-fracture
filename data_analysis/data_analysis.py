@@ -42,9 +42,9 @@ Contains:
 
 import json
 import os
+import random
 import time
 from collections import defaultdict, Counter
-import random
 
 import imageio
 import matplotlib.pyplot as plt
@@ -52,12 +52,12 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
 from mpl_toolkits.mplot3d import Axes3D
 from scipy import ndimage
 from skimage import morphology
 from skimage.transform import resize
 from tqdm import tqdm
-
 
 sns.set_theme()
 
@@ -850,7 +850,7 @@ if __name__ == '__main__':
 
     class Cfg:
         data_root = DATASET_ROOT
-        context_size = 7
+        context_size = 0
         patch_original_size = 64
         patch_final_size = 256
         proportion_fracture_in_patch = 0.05
@@ -861,7 +861,7 @@ if __name__ == '__main__':
         force_data_info = False
         seed = 42
         batch_size_train = 64
-        num_workers = 8  # 18
+        num_workers = 2  # 18
 
 
     cfg = Cfg()
@@ -869,7 +869,7 @@ if __name__ == '__main__':
     import sys
 
     REPO_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-    sys.path.append(REPO_ROOT)
+    sys.path.append(sys.path.append(os.path.abspath('..')))
     from dataset import RibFracDataset
 
     train_set = RibFracDataset(
@@ -909,42 +909,33 @@ if __name__ == '__main__':
 
     # stop conditions
     max_n_patches = 10000  # max 33280
-    epsilon = 1e-4
+    epsilon = 1e-6
 
-    prev_mean = 0
-    prev_std = 0
+    prev_mean = 1e-15
+    prev_std = 1e-15
 
-    t0 = time.time()
-    n_load_time = 0
+    i = -1
     for i, (patch, label) in enumerate(train_loader):
 
-        # loading time
-        load_time = time.time() - t0
-        n_load_time += 1
-        print('Load time: {:.2f}s'.format(load_time))
-        print('Mean load time: {:.2f}s'.format(load_time / n_load_time))
-
-        print(patch.shape)  # (64, 3, 256, 256)
-        assert patch.shape == (cfg.batch_size_train, cfg.patch_final_size, cfg.patch_final_size, cfg.context_size)
-
-        sum_vals += patch.sum()
-        sum_val2s += (patch ** 2).sum()
+        sum_vals += patch.sum().item()
+        sum_val2s += (patch ** 2).sum().item()
         n_vals += patch.numel()
 
-        if i % 10 == 0:
+        if (i+1) % 10 == 0:
             # compute statistics
             mean = sum_vals / n_vals
             std = np.sqrt(sum_val2s / n_vals - mean ** 2)
 
             # log
-            print('n={}, mean={}, std={}'.format(i, mean, std))
+            print('n={}, mean={}, std={}'.format(i+1, mean, std))
             with open(LOG_FILE, 'a') as f:
-                f.write('{},{},{}\n'.format(i, mean, std))
+                f.write('{},{},{}\n'.format(i+1, mean, std))
 
             # check convergence
+            print('Convergence values: mean={}, std={}'.format(abs((mean - prev_mean) / prev_mean), abs((std - prev_std) / prev_std)))
             converged = (abs((mean - prev_mean) / prev_mean) < epsilon and abs((std - prev_std) / prev_std) < epsilon)
-            if converged or i >= max_n_patches:
-                print(f"Converged at {i}!" if converged else "Max number of patches reached!")
+            if converged or i+1 >= max_n_patches:
+                print(f"Converged at {i+1}!" if converged else "Max number of patches reached!")
                 break
 
             prev_mean = mean
@@ -956,7 +947,7 @@ if __name__ == '__main__':
     mean = sum_vals / n_vals
     std = np.sqrt(sum_val2s / n_vals - mean ** 2)
 
-    print('END n={}, mean={}, std={}'.format(i, mean, std))
+    print('END n={}, mean={}, std={}'.format(i+1, mean, std))
     with open(OUT_FILE, 'w') as f:
-        json.dump({'n': i, 'mean': mean, 'std': std}, f, indent=2)
+        json.dump({'n': i+1, 'mean': mean, 'std': std}, f, indent=2)
 

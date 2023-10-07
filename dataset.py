@@ -13,19 +13,21 @@ from tqdm import tqdm
 
 class RibFracDataset(Dataset):
     def __init__(
-        self,
-        root_dir: str,
-        partition: str,
-        context_size: int,
-        patch_original_size: int,
-        patch_final_size: int,
-        proportion_fracture_in_patch: float,
-        cutoff_height: int,
-        clip_min_val: int,
-        clip_max_val: int,
-        test_stride: int,
-        force_data_info: bool = False,
-        debug: bool = False,
+            self,
+            root_dir: str,
+            partition: str,
+            context_size: int,
+            patch_original_size: int,
+            patch_final_size: int,
+            proportion_fracture_in_patch: float,
+            cutoff_height: int,
+            clip_min_val: int,
+            clip_max_val: int,
+            data_mean: float,
+            data_std: float,
+            test_stride: int,
+            force_data_info: bool = False,
+            debug: bool = False
     ):
         super().__init__()
         assert partition in ["train", "val", "test"]
@@ -58,7 +60,7 @@ class RibFracDataset(Dataset):
             self.drop_slices_without_context()
 
         # Set up transforms
-        self.normalize = transforms.Normalize(mean=0.5, std=0.5)
+        self.normalize = transforms.Normalize(mean=data_mean, std=data_std)
 
         if partition == "train":
             self.transform = transforms.Compose(
@@ -165,8 +167,8 @@ class RibFracDataset(Dataset):
         proxy_img = nib.load(img_filename)
         img = torch.from_numpy(
             proxy_img.dataobj[
-                ...,
-                slice_idx - self.context_size : slice_idx + self.context_size + 1,
+            ...,
+            slice_idx - self.context_size: slice_idx + self.context_size + 1,
             ]
             .copy()
             .T
@@ -216,11 +218,11 @@ class RibFracDataset(Dataset):
             for random_coord in np.random.permutation(coords):
                 random_coord_off = random_coord + random_offset
                 if random_coord_off[0] >= (
-                    img.shape[-1] - self.patch_original_size // 2
+                        img.shape[-1] - self.patch_original_size // 2
                 ):
                     continue
                 if random_coord_off[1] >= (
-                    img.shape[-1] - self.patch_original_size // 2
+                        img.shape[-1] - self.patch_original_size // 2
                 ):
                     continue
                 if random_coord_off[0] <= (self.patch_original_size // 2):
@@ -232,8 +234,8 @@ class RibFracDataset(Dataset):
                     mask, random_coord_off, self.patch_original_size
                 )
                 if (
-                    torch.sum(mask_patch) / mask_patch.numel()
-                    > self.proportion_fracture_in_patch
+                        torch.sum(mask_patch) / mask_patch.numel()
+                        > self.proportion_fracture_in_patch
                 ):
                     break
                 img_patch = crop_patch(img, random_coord, self.patch_original_size)
@@ -244,11 +246,11 @@ class RibFracDataset(Dataset):
             for random_coord in np.random.permutation(coords):
                 random_coord_off = random_coord + random_offset
                 if random_coord_off[0] >= (
-                    img.shape[-1] - self.patch_original_size // 2
+                        img.shape[-1] - self.patch_original_size // 2
                 ):
                     continue
                 if random_coord_off[1] >= (
-                    img.shape[-1] - self.patch_original_size // 2
+                        img.shape[-1] - self.patch_original_size // 2
                 ):
                     continue
                 if random_coord_off[0] <= (self.patch_original_size // 2):
@@ -284,7 +286,7 @@ class RibFracDataset(Dataset):
                 self.df[
                     (self.df.img_filename == img_filename)
                     & (self.df.slice_idx > (size - self.context_size))
-                ].index,
+                    ].index,
                 inplace=True,
             )
             # Drop slices without sufficient from below
@@ -292,7 +294,7 @@ class RibFracDataset(Dataset):
                 self.df[
                     (self.df.img_filename == img_filename)
                     & (self.df.slice_idx < self.context_size)
-                ].index,
+                    ].index,
                 inplace=True,
             )
 
@@ -343,7 +345,7 @@ class RibFracDataset(Dataset):
         def process_folder(folder_name):
             data = []
             for filename in tqdm(
-                os.listdir(os.path.join(self.root_dir, folder_name)), desc=folder_name
+                    os.listdir(os.path.join(self.root_dir, folder_name)), desc=folder_name
             ):
                 f = os.path.join(self.root_dir, folder_name, filename)
                 if filename.endswith(".nii") or filename.endswith(".nii.gz"):
@@ -454,8 +456,8 @@ class TestSampler(Sampler):
 
 def crop_patch(image, center_coord, patch_size):
     patch = image[
-        :,
-        center_coord[0] - patch_size // 2 : center_coord[0] + patch_size // 2,
-        center_coord[1] - patch_size // 2 : center_coord[1] + patch_size // 2,
-    ]
+            :,
+            center_coord[0] - patch_size // 2: center_coord[0] + patch_size // 2,
+            center_coord[1] - patch_size // 2: center_coord[1] + patch_size // 2,
+            ]
     return patch
