@@ -42,6 +42,7 @@ Contains:
 
 import json
 import os
+import time
 from collections import defaultdict, Counter
 import random
 
@@ -813,30 +814,149 @@ if __name__ == '__main__':
     TRAIN_LABELS = os.path.join(DATASET_ROOT, 'ribfrac-train-labels')
     TRAIN_INFO = os.path.join(DATASET_ROOT, 'ribfrac-train-info.csv')
 
-    def preprocess1(img):
-        """
-        First step of preprocessing: clip values (top and bottom) and minmax-normalize.
-        """
-        clip_min_val = 100  # design hyperparameter
-        clip_max_val = 1600  # design hyperparameter
-        img = img.clip(clip_min_val, clip_max_val)
-        img = (img - clip_min_val) / (clip_max_val - clip_min_val)
-        return img
+    # def preprocess1(img):
+    #     """
+    #     First step of preprocessing: clip values (top and bottom) and minmax-normalize.
+    #     """
+    #     clip_min_val = 100  # design hyperparameter
+    #     clip_max_val = 1600  # design hyperparameter
+    #     img = img.clip(clip_min_val, clip_max_val)
+    #     img = (img - clip_min_val) / (clip_max_val - clip_min_val)
+    #     return img
+    #
+    # #rib_data = compute_rib_data([TRAIN_INFO])
+    #
+    # print('\nFRACTURE ANALYSIS')
+    # #_, _ = compute_or_load_fracture_analysis(ANALYSIS_ROOT, TRAIN_LABELS, rib_data)
+    #
+    # #mean, std, cum_scan_bottom, avg_scan_bottom, max_values = compute_or_load_pixel_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, lambda x: np.clip(x, 100, None), align='bottom')
+    #
+    # print('\nPIXEL ANALYSIS')
+    # for align in ['top', 'bottom', 'center', 'fit']:
+    #     break  # TODO: compute this!
+    #     print('\nALIGN={}'.format(align))
+    #     _, _, cum_scan, avg_scan = compute_or_load_pixel_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, preprocess1, align=align)
+    #     #_ = compute_or_load_eq(ANALYSIS_ROOT, cum_scan, avg_scan, align=align)  # TODO: tmp - ignore eq
+    #
+    # print('\nCONNECTED COMPONENTS ANALYSIS')
+    # #_ = compute_or_load_conn_comp_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, preprocess1, max_files=100, max_slices=50)
 
-    #rib_data = compute_rib_data([TRAIN_INFO])
 
-    print('\nFRACTURE ANALYSIS')
-    #_, _ = compute_or_load_fracture_analysis(ANALYSIS_ROOT, TRAIN_LABELS, rib_data)
-    
-    #mean, std, cum_scan_bottom, avg_scan_bottom, max_values = compute_or_load_pixel_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, lambda x: np.clip(x, 100, None), align='bottom')
-    
-    print('\nPIXEL ANALYSIS')
-    for align in ['top', 'bottom', 'center', 'fit']:
-        break  # TODO: compute this!
-        print('\nALIGN={}'.format(align))
-        _, _, cum_scan, avg_scan = compute_or_load_pixel_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, preprocess1, align=align)
-        #_ = compute_or_load_eq(ANALYSIS_ROOT, cum_scan, avg_scan, align=align)  # TODO: tmp - ignore eq
+    ## statistics
 
-    print('\nCONNECTED COMPONENTS ANALYSIS')
-    _ = compute_or_load_conn_comp_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, preprocess1, max_files=100, max_slices=50)
+    import torch.utils.data as data
+
+    DATASET_ROOT = '/media/eggonz/WD Elements/research/datasets/ribfrac'
+
+    class Cfg:
+        data_root = DATASET_ROOT
+        context_size = 7
+        patch_original_size = 64
+        patch_final_size = 256
+        proportion_fracture_in_patch = 0.05
+        cutoff_height = 450 + 32
+        clip_min_val = 100
+        clip_max_val = 2000
+        test_stride = 32
+        force_data_info = False
+        seed = 42
+        batch_size_train = 64
+        num_workers = 8  # 18
+
+
+    cfg = Cfg()
+
+    import sys
+
+    REPO_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    sys.path.append(REPO_ROOT)
+    from dataset import RibFracDataset
+
+    train_set = RibFracDataset(
+        root_dir=cfg.data_root,
+        partition="train",
+        context_size=cfg.context_size,
+        patch_original_size=cfg.patch_original_size,
+        patch_final_size=cfg.patch_final_size,
+        proportion_fracture_in_patch=cfg.proportion_fracture_in_patch,
+        cutoff_height=cfg.cutoff_height,
+        clip_min_val=cfg.clip_min_val,
+        clip_max_val=cfg.clip_max_val,
+        test_stride=cfg.test_stride,
+        force_data_info=cfg.force_data_info,
+    )
+    train_sampler = train_set.get_train_sampler(seed=cfg.seed)
+    train_loader = data.DataLoader(
+        train_set,
+        sampler=train_sampler,
+        batch_size=cfg.batch_size_train,
+        drop_last=True,
+        pin_memory=True,
+        num_workers=cfg.num_workers,
+    )
+
+    LOG_FILE = os.path.join(REPO_ROOT, 'statistics_log.csv')
+    OUT_FILE = os.path.join(REPO_ROOT, 'statistics.json')
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
+    with open(LOG_FILE, 'w') as f:
+        f.write('n,mean,std\n')
+
+    # accumulators
+    sum_vals = 0
+    sum_val2s = 0
+    n_vals = 0
+
+    # stop conditions
+    max_n_patches = 10000  # max 33280
+    epsilon = 1e-4
+
+    prev_mean = 0
+    prev_std = 0
+
+    t0 = time.time()
+    n_load_time = 0
+    for i, (patch, label) in enumerate(train_loader):
+
+        # loading time
+        load_time = time.time() - t0
+        n_load_time += 1
+        print('Load time: {:.2f}s'.format(load_time))
+        print('Mean load time: {:.2f}s'.format(load_time / n_load_time))
+
+        print(patch.shape)  # (64, 3, 256, 256)
+        assert patch.shape == (cfg.batch_size_train, cfg.patch_final_size, cfg.patch_final_size, cfg.context_size)
+
+        sum_vals += patch.sum()
+        sum_val2s += (patch ** 2).sum()
+        n_vals += patch.numel()
+
+        if i % 10 == 0:
+            # compute statistics
+            mean = sum_vals / n_vals
+            std = np.sqrt(sum_val2s / n_vals - mean ** 2)
+
+            # log
+            print('n={}, mean={}, std={}'.format(i, mean, std))
+            with open(LOG_FILE, 'a') as f:
+                f.write('{},{},{}\n'.format(i, mean, std))
+
+            # check convergence
+            converged = (abs((mean - prev_mean) / prev_mean) < epsilon and abs((std - prev_std) / prev_std) < epsilon)
+            if converged or i >= max_n_patches:
+                print(f"Converged at {i}!" if converged else "Max number of patches reached!")
+                break
+
+            prev_mean = mean
+            prev_std = std
+
+        t0 = time.time()
+
+    # compute statistics
+    mean = sum_vals / n_vals
+    std = np.sqrt(sum_val2s / n_vals - mean ** 2)
+
+    print('END n={}, mean={}, std={}'.format(i, mean, std))
+    with open(OUT_FILE, 'w') as f:
+        json.dump({'n': i, 'mean': mean, 'std': std}, f, indent=2)
 
