@@ -1,10 +1,11 @@
 import dataclasses
+import os
+import shutil
 from dataclasses import dataclass
 
 import pytorch_lightning as pl
 
 from dataset import BalancedFractureSampler
-import shutil, os
 
 
 @dataclass
@@ -63,7 +64,7 @@ class SetEpochCallback(pl.Callback):
 
 
 class SaveCheckpointAtHomeCallback(pl.Callback):
-    def __init__(self, local_dir:str, exp_name: str):
+    def __init__(self, local_dir: str, exp_name: str):
         super().__init__()
         self.local_dir = local_dir
         self.exp_name = exp_name
@@ -74,6 +75,9 @@ class SaveCheckpointAtHomeCallback(pl.Callback):
         pl_module: pl.LightningModule,
     ) -> None:
         best_model_path = trainer.checkpoint_callback.best_model_path
-        print(f'Saving {best_model_path} locally...')
+        print(f"Saving {best_model_path} locally...")
         if os.path.exists(best_model_path):
-            shutil.copy(best_model_path, os.path.join(self.local_dir, f'/best_model_{self.exp_name}.ckpt'))
+            shutil.copy(
+                best_model_path,
+                os.path.join(self.local_dir, f"/best_model_{self.exp_name}.ckpt"),
+            )

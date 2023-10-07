@@ -215,16 +215,22 @@ class RibFracDataset(Dataset):
             # Look for patch with sufficient fracture pixels
             for random_coord in np.random.permutation(coords):
                 random_coord_off = random_coord + random_offset
-                if random_coord_off[0] >= (img.shape[-1] - self.patch_original_size // 2):
+                if random_coord_off[0] >= (
+                    img.shape[-1] - self.patch_original_size // 2
+                ):
                     continue
-                if random_coord_off[1] >= (img.shape[-1] - self.patch_original_size // 2):
+                if random_coord_off[1] >= (
+                    img.shape[-1] - self.patch_original_size // 2
+                ):
                     continue
                 if random_coord_off[0] <= (self.patch_original_size // 2):
                     continue
                 if random_coord_off[1] <= (self.patch_original_size // 2):
                     continue
                 img_patch = crop_patch(img, random_coord_off, self.patch_original_size)
-                mask_patch = crop_patch(mask, random_coord_off, self.patch_original_size)
+                mask_patch = crop_patch(
+                    mask, random_coord_off, self.patch_original_size
+                )
                 if (
                     torch.sum(mask_patch) / mask_patch.numel()
                     > self.proportion_fracture_in_patch
@@ -237,16 +243,22 @@ class RibFracDataset(Dataset):
             # Look for patch with no fracture pixels
             for random_coord in np.random.permutation(coords):
                 random_coord_off = random_coord + random_offset
-                if random_coord_off[0] >= (img.shape[-1] - self.patch_original_size // 2):
+                if random_coord_off[0] >= (
+                    img.shape[-1] - self.patch_original_size // 2
+                ):
                     continue
-                if random_coord_off[1] >= (img.shape[-1] - self.patch_original_size // 2):
+                if random_coord_off[1] >= (
+                    img.shape[-1] - self.patch_original_size // 2
+                ):
                     continue
                 if random_coord_off[0] <= (self.patch_original_size // 2):
                     continue
                 if random_coord_off[1] <= (self.patch_original_size // 2):
                     continue
                 img_patch = crop_patch(img, random_coord_off, self.patch_original_size)
-                mask_patch = crop_patch(mask, random_coord_off, self.patch_original_size)
+                mask_patch = crop_patch(
+                    mask, random_coord_off, self.patch_original_size
+                )
                 if torch.sum(mask_patch) == 0:
                     break
                 img_patch = crop_patch(img, random_coord, self.patch_original_size)
@@ -385,7 +397,9 @@ class BalancedFractureSampler(Sampler):
         self.data_info = data_info
         self.seed = seed
         self.epoch = 0
-        self.size = int(self.data_info[self.data_info.is_fracture_slice == True].shape[0] * 2)
+        self.size = int(
+            self.data_info[self.data_info.is_fracture_slice == True].shape[0] * 2
+        )
 
     def __len__(self):
         return self.size

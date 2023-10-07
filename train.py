@@ -1,16 +1,18 @@
 import argparse
+import os
 from argparse import BooleanOptionalAction
 
 import pytorch_lightning as pl
 import torch
 import torch.utils.data as data
-import wandb
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
+import wandb
 from dataset import RibFracDataset
 from model import UnetModule
-from utils import SetEpochCallback, config_from_args
+from utils import (SaveCheckpointAtHomeCallback, SetEpochCallback,
+                   config_from_args)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -24,6 +26,12 @@ if __name__ == "__main__":
         type=str,
         default="./checkpoints/",
         help="Root directory for checkpoints.",
+    )
+    parser.add_argument(
+        "--local-dir",
+        type=str,
+        default="/home/username/",
+        help="Local directory to safeguard best checkpoint.",
     )
     parser.add_argument(
         "--patch-original-size",
@@ -46,7 +54,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cutoff-height",
         type=int,
-        default=450+32,
+        default=450 + 32,
         help="Height value to remove backplate. Make sure to consider padding.",
     )
     parser.add_argument(
@@ -98,8 +106,8 @@ if __name__ == "__main__":
 
     # WandB Parameters
     parser.add_argument("--do-wandb", action=BooleanOptionalAction, default=False)
-    parser.add_argument("--wandb-project", type=str, default="rib-frac")
-    parser.add_argument("--wandb-entity", type=str, default="diego-gcerdas")
+    parser.add_argument("--wandb-project", type=str, default="ribfrac_team7")
+    parser.add_argument("--wandb-entity", type=str, default="username")
     parser.add_argument("--wandb-mode", type=str, default="online")
     args = parser.parse_args()
     cfg = config_from_args(args, mode="train")
@@ -124,7 +132,7 @@ if __name__ == "__main__":
         train_set,
         sampler=train_sampler,
         batch_size=cfg.batch_size_train,
-        drop_last=True,
+        drop_last=False,
         pin_memory=True,
         num_workers=cfg.num_workers,
     )
@@ -165,7 +173,12 @@ if __name__ == "__main__":
         save_top_k=1,
         monitor="val_dice_coeff_0.5",
     )
-    callbacks = [SetEpochCallback(train_sampler), checkpoint_callback]
+    os.makedirs(f"{cfg.ckpt_root}/{cfg.exp_name}", exist_ok=True)
+    callbacks = [
+        SetEpochCallback(train_sampler),
+        SaveCheckpointAtHomeCallback(cfg.local_dir, cfg.exp_name),
+        checkpoint_callback,
+    ]
 
     if cfg.do_wandb:
         wandb.init(
@@ -183,7 +196,7 @@ if __name__ == "__main__":
         max_epochs=cfg.max_epochs,
         logger=logger,
         callbacks=callbacks,
-        num_sanity_val_steps=2,
+        num_sanity_val_steps=0,
     )
 
     trainer.fit(model, train_loader, val_loader)
