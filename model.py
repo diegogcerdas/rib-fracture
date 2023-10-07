@@ -10,7 +10,9 @@ from torch import optim
 from tqdm import tqdm
 
 from unet3plus.model_unet3plus import Unet3Plus
+from unet3plus.model_unet3plus_deep_supervision_cgm import UNet_3Plus_DeepSup_CGM
 
+from loss import MSSSIM, IOU, FocalLoss
 
 class UnetModule(pl.LightningModule):
     """
@@ -19,6 +21,7 @@ class UnetModule(pl.LightningModule):
 
     def __init__(
         self,
+        model_name: str,
         n_channels: int,
         learning_rate: float,
         weight_decay: float,
@@ -28,13 +31,19 @@ class UnetModule(pl.LightningModule):
         super(UnetModule, self).__init__()
         self.save_hyperparameters()
 
+        self.model_name = model_name
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.data_root = data_root
         self.cutoff_height = cutoff_height
 
-        self.network = Unet3Plus(n_channels)
-
+        if model_name == "unet3plus":
+            self.network = Unet3Plus(n_channels)
+        elif model_name == "unet3plus_deep_sup_cgm":
+            self.network = UNet_3Plus_DeepSup_CGM(n_channels)
+        else:
+            raise ValueError(f"Unknown model name: {model_name}")
+        
     def forward(self, x):
         return self.network(x)
 
@@ -46,10 +55,36 @@ class UnetModule(pl.LightningModule):
 
     def compute_loss(self, batch, mode):
         x, y = batch
-        y_hat = self(x)
-        loss = F.binary_cross_entropy_with_logits(y_hat, y)
-        self.log_stat(f"{mode}_bce_loss", loss)
-        return loss
+
+        if self.model_name == "unet3plus":
+            y_hat = self(x)
+            loss = F.binary_cross_entropy_with_logits(y_hat, y)
+            self.log_stat(f"{mode}_bce_loss", loss)
+            return loss
+        elif self.model_name == "unet3plus_deep_sup_cgm":
+            is_frac = y.reshape(y.shape[0], -1).sum(dim=1) > 0 # is there a fracture in this patch?
+            is_frac = is_frac.float()
+            cls_branch, (d1), (d2), d3, (d4),(d5) = self(x)
+ 
+            loss_BCE = torch.binary_cross_entropy_with_logits(cls_branch[:,1], is_frac)
+            
+            # segmentation loss
+            img1 = torch.concatenate([d1, d2, d3, d4, d5])    
+            img2 = torch.concatenate([y, y, y, y, y])
+
+            loss_seg = MSSSIM()(img1, img2) + IOU()(img1, img2) + FocalLoss()(img1, img2)
+             
+            loss = loss_BCE + loss_seg  
+            loss = loss.mean()
+            
+            # self.log_stat(f"{mode}_bce_loss", loss)
+            # self.log_stat(f"{mode}_bce_loss", loss)
+            # self.log_stat(f"{mode}_bce_loss", loss)
+            # self.log_stat(f"{mode}_bce_loss", loss)
+            
+            return loss
+        else:
+            raise ValueError(f"Unknown model name: {self.model_name}")
 
     def update_pred_masks(self, batch):
         patches, coords, filenames, slice_idx, pts = batch
@@ -67,6 +102,7 @@ class UnetModule(pl.LightningModule):
             if coord[0] > self.cutoff_height:
                 continue
             output = (
+
                 resize(F.sigmoid(self(patch.unsqueeze(0))))
                 .squeeze()
                 .detach()
