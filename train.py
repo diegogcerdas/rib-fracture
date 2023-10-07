@@ -172,11 +172,12 @@ if __name__ == "__main__":
         dirpath=f"{cfg.ckpt_root}/{cfg.exp_name}",
         save_top_k=1,
         monitor="val_dice_coeff_0.5",
+        mode="max",
     )
     os.makedirs(f"{cfg.ckpt_root}/{cfg.exp_name}", exist_ok=True)
     callbacks = [
         SetEpochCallback(train_sampler),
-        SaveCheckpointAtHomeCallback(cfg.local_dir, cfg.exp_name),
+        # SaveCheckpointAtHomeCallback(cfg.local_dir, cfg.exp_name), # TODO: Not working right now
         checkpoint_callback,
     ]
 
