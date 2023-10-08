@@ -14,8 +14,10 @@
 #
 #####
 
-mkdir -p data/ribfrac
-cd data/ribfrac
+DATASET_ROOT=$1  # data/ribfrac
+
+mkdir -p $DATASET_ROOT
+cd $DATASET_ROOT
 
 mkdir -p download
 
@@ -78,7 +80,6 @@ mv tmp_train_images/Part*/*.nii.gz ribfrac-train-images/
 mv tmp_train_labels/Part*/*.nii.gz ribfrac-train-labels/
 
 awk '(NR == 1) || (FNR > 1)' download/ribfrac-train-info-*.csv > ribfrac-train-info.csv  # merge csv files
-cp download/ribfrac-train-info-*.csv .  # TODO: remove code that uses info-1.csv and info-2.csv instead of info.csv
 cp download/ribfrac-val-info.csv .
 
 rmdir tmp_train_*/Part*

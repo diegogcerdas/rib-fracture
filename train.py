@@ -1,5 +1,6 @@
 import argparse
 import os
+import subprocess
 from argparse import BooleanOptionalAction
 
 import pytorch_lightning as pl
@@ -90,6 +91,12 @@ if __name__ == "__main__":
         default=False,
         help="Force data info generation.",
     )
+    parser.add_argument(
+        "--download-data",
+        action=BooleanOptionalAction,
+        default=False,
+        help="Download data in specified data directory if not present.",
+    )
 
     # Model Parameters
     parser.add_argument(
@@ -124,6 +131,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     cfg = config_from_args(args, mode="train")
 
+    # Download data
+    if cfg.download_data:
+        HERE = os.path.dirname(os.path.realpath(__file__))
+        scriptfile = os.path.join(HERE, "ribfrac_download.sh")
+        logfile = os.path.join(HERE, "ribfrac_download.log")
+        subprocess.run(["bash", scriptfile, cfg.data_root], stdout=open(logfile, "w"))
+
+    # Set seed
     pl.seed_everything(cfg.seed)
 
     train_set = RibFracDataset(
