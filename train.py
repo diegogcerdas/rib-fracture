@@ -132,7 +132,7 @@ if __name__ == "__main__":
     cfg = config_from_args(args, mode="train")
 
     # Download data
-    if cfg.download_data:
+    if cfg.download_data and not os.path.exists(cfg.data_root):
         HERE = os.path.dirname(os.path.realpath(__file__))
         scriptfile = os.path.join(HERE, "ribfrac_download.sh")
         logfile = os.path.join(HERE, "ribfrac_download.log")
