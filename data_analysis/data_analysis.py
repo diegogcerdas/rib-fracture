@@ -2,38 +2,64 @@
 Util functions module for data analysis.
 
 Contains:
+    - LABEL_CODE
     - compute_rib_data
     > analysis: fractures
-        - fracture_label_analysis
+        - analysis_fracture_labels
     > visualization
         - imshow
         - imshow_mutiple
         - scatter3d
         - create_gif
+    > file management
+        - load_params_json
+        - update_params_json
     > array value operations
         - minmax
         - histogram_equalization
         - equalize_per_slice
-    > analysis: values
-        - analysis_cum_scans
+        - median_filter
+    > analysis: pixel values
+        - analysis_pixel_values
+    > connected components
+        - SQUARE_STRUCT
+        - STAR_STRUCT
+        - identify_components
+        - largest_component
+        - get_mask_geometry
+        - get_component_stats_per_slice
+        - get_component_stats_per_slice
+    > analysis: connected components
+        - analysis_conn_comp
+    > compute-or-load
+        - compute_or_load_fracture_analysis
+        - compute_or_load_pixel_analysis
+        - compute_or_load_eq
+        - compute_or_load_conn_comp_analysis
+
+
 """
 
-import os
-from collections import defaultdict, Counter
 import json
+import os
+import random
+import time
+from collections import defaultdict, Counter
 
+import imageio
+import matplotlib.pyplot as plt
 import nibabel as nib
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import seaborn as sns
-sns.set_theme()
-import imageio
-from skimage.transform import resize
+import torch
+from mpl_toolkits.mplot3d import Axes3D
 from scipy import ndimage
+from skimage import morphology
+from skimage.transform import resize
+from tqdm import tqdm
 
+sns.set_theme()
 
 LABEL_CODE = {
     0: 'background',
@@ -43,7 +69,6 @@ LABEL_CODE = {
     4: 'segmental',
     -1: 'undefined'
 }
-
 
 
 def compute_rib_data(info_paths: list):
@@ -97,7 +122,7 @@ def _center_of_mass(scan) -> tuple:
 
 # analysis: fractures
 
-def fracture_label_analysis(labels_path, rib_data):
+def analysis_fracture_labels(labels_path, rib_data):
     """
     Processes train labels and produces 2 dataframes with the following information:
 
@@ -151,7 +176,7 @@ def fracture_label_analysis(labels_path, rib_data):
     scan_data = []
     frac_data = []
 
-    for filename in tqdm(os.listdir(labels_path)[2:], desc='analyzing train data'):
+    for filename in tqdm(os.listdir(labels_path), desc='fracture labels analysis'):
 
         if not (filename.endswith("label.nii.gz") or filename.endswith("label.nii")):
             print('WARNING: Directory structure is not as expected. Ignoring file', filename)
@@ -159,7 +184,7 @@ def fracture_label_analysis(labels_path, rib_data):
 
         filepath = os.path.join(labels_path, filename)
         label_scan = nib.load(filepath).get_fdata().T.astype(int)
-        
+
         public_id = filename.split('-')[0]
         scan_data.append([
             public_id,
@@ -171,7 +196,7 @@ def fracture_label_analysis(labels_path, rib_data):
         for slice_idx, slice in enumerate(label_scan):
             unique_label_ids = np.unique(slice).tolist()
             labels_per_slice[slice_idx] = unique_label_ids
-            
+
         for frac_idx, frac_code in enumerate(rib_data[public_id]):
 
             if frac_code == 0:  # ignore background
@@ -207,7 +232,7 @@ def fracture_label_analysis(labels_path, rib_data):
             com_z += min_z
 
             ## store values
-            
+
             frac_data.append([
                 public_id,
                 frac_idx,
@@ -272,7 +297,7 @@ def fracture_label_analysis(labels_path, rib_data):
             "max2darea",
         ],
     )
-    
+
     for axis in ['x', 'y', 'z']:
         # size of bounding box
         df_frac['size_' + axis] = df_frac['max_' + axis] - df_frac['min_' + axis]
@@ -303,6 +328,7 @@ def imshow(img, title=None, range=None):
     plt.imshow(img, cmap='gray', vmin=vmin, vmax=vmax)
     if title:
         plt.title(title)
+    plt.colorbar()
     plt.show()
     sns.set_theme()
 
@@ -434,21 +460,21 @@ def equalize_per_slice(scan):
         equalized_scan[i] = histogram_equalization(scan[i])
     return equalized_scan
 
-def median_filter(img, kernel_size=3):
-    """median filter with kernel size"""
+def remove_noise(img, kernel_size=3):
+    """remove salt-and-papper noise with median filter"""
     return ndimage.median_filter(img, size=kernel_size)
 
 
 # analysis: pixel values
 
-def analysis_pixel_values(images_path, fn_preprocess, cum_align='top'):
+def analysis_pixel_values(images_path, fn_preprocess, align='top'):
     """
     Accumulates all scans in the (train) images folder after preprocessing them with fn_preprocess
 
     Args:
         images_path: path to the (train) images folder
         fn_preprocess: function that takes a scan and returns the scan preprocessed. It must return a binary boolean array with coords (z, x, y)
-        cum_align: how the scans with different sizes should be aligned. 'top'/'bottom'/'center'/'fit'. 'fit' stretches to relative height
+        align: how the scans with different z-sizes should be aligned. 'top'/'bottom'/'center'/'fit'. 'fit' stretches to relative height
     
     Returns:
         mean: mean value of all pixels in all scans
@@ -459,18 +485,19 @@ def analysis_pixel_values(images_path, fn_preprocess, cum_align='top'):
     max_size = 721  # hardcoded from df_scan.describe()>size_z>max
     fit_size = 512  # hardcoded to match x and y, value in between min=239 and max=721
 
+    max_values = []
     sum_values = 0  # for mean
     sum_values2 = 0  # squared, for std
     tot_elem = 0  # total number of elements
 
-    if cum_align == 'fit':
+    if align == 'fit':
         cum_scans = np.zeros((fit_size, 512, 512))
         cum_scans_n = 0  # only number of scans needed
     else:
         cum_scans = np.zeros((max_size, 512, 512))
         cum_scans_n = np.zeros((max_size, 512, 512))
 
-    for filename in tqdm(os.listdir(images_path)[2:], desc='analyze pixel values'):
+    for filename in tqdm(os.listdir(images_path), desc='pixel values analysis (align={})'.format(align)):
 
         if not (filename.endswith("image.nii.gz") or filename.endswith("image.nii")):
             print('WARNING: Directory structure is not as expected. Ignoring file', filename)
@@ -479,24 +506,23 @@ def analysis_pixel_values(images_path, fn_preprocess, cum_align='top'):
         # read scan
         filepath = os.path.join(images_path, filename)
         raw_scan = nib.load(filepath).get_fdata().T.astype(float)
-
-        # threshold scan
         scan = fn_preprocess(raw_scan)  # (z, x, y)
 
+        max_values.append(np.max(scan))
         sum_values += np.sum(scan)
         sum_values2 += np.sum(scan**2)
         tot_elem += scan.size
 
-        if cum_align == 'top':
+        if align == 'top':
             cum_scans[:scan.shape[0]] += scan
             cum_scans_n[:scan.shape[0]] += 1
-        elif cum_align == 'bottom':
+        elif align == 'bottom':
             cum_scans[-scan.shape[0]:] += scan
             cum_scans_n[-scan.shape[0]:] += 1
-        elif cum_align == 'center':
+        elif align == 'center':
             cum_scans[(max_size-scan.shape[0])//2:(max_size+scan.shape[0])//2] += scan
             cum_scans_n[(max_size-scan.shape[0])//2:(max_size+scan.shape[0])//2] += 1
-        elif cum_align == 'fit':
+        elif align == 'fit':
             resized_scan = resize(scan, (fit_size, 512, 512), preserve_range=True)
             cum_scans += resized_scan
             cum_scans_n += 1
@@ -510,7 +536,275 @@ def analysis_pixel_values(images_path, fn_preprocess, cum_align='top'):
 
     print('Done!')
 
-    return mean, std, cum_scans, avg_scan
+    return mean, std, cum_scans, avg_scan, max_values
+
+
+# connected components
+
+SQUARE_STRUCT = np.ones((3, 3))
+STAR_STRUCT = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]])
+
+def identify_components(img, struct_elem=SQUARE_STRUCT):
+    """
+    img: 2d image
+    elem: structuring element
+    """
+
+    def multi_dil(im, num, element):
+        for i in range(num):
+            im = morphology.dilation(im, element)
+        return im
+
+    def multi_ero(im, num, element):
+        for i in range(num):
+            im = morphology.erosion(im, element)
+        return im
+
+    # thr = (190 - 100) / (1600 - 100)
+    # binarized_axial_image = np.where(img > 0.02, 1, 0)
+    # multi_dilated = multi_dil(binarized_axial_image, 7, element=struct_elem)
+    # area_closed = morphology.area_closing(multi_dilated, 50000)
+    # multi_eroded = multi_ero(area_closed, 7, element=struct_elem)
+    # opened = morphology.opening(multi_eroded)
+
+    thr = (140 - 100) / (1600 - 100)
+    binarized_axial_image = np.where(img > thr, 1, 0)
+    multi_dilated = multi_dil(binarized_axial_image, 7, element=struct_elem)
+    area_closed = morphology.area_closing(multi_dilated, 50000)
+    multi_eroded = multi_ero(area_closed, 6, element=struct_elem)
+    opened = morphology.opening(multi_eroded)
+
+    # Label the connected components in the segmented image
+    labeled_image, num_labels = morphology.label(opened, connectivity=2, return_num=True)
+
+    return labeled_image, num_labels
+
+def largest_component(labeled_img, return_mask=False):
+    areas = np.bincount(labeled_img.ravel())
+    if len(areas) == 1:
+        # no connected components other than background
+        return (0, None) if return_mask else 0
+    
+    # largest object
+    largest_object_label = np.argmax(areas[1:]) + 1  # +1 to account for background label 0
+
+    if return_mask:
+        mask = labeled_img == largest_object_label
+        return largest_object_label, mask
+    return largest_object_label
+
+def _remove_largest_component(img):  # TODO: unused
+    """
+    img: 2d image in range [0,1]
+    """
+    _, mask = largest_component(img, return_mask=True)
+    if mask is None:
+        # no connected components other than background
+        return img
+
+    # TODO: dilate mask
+
+    # remove largest object
+    out_img = img.copy()
+    out_img[mask] = 0
+
+    return out_img
+
+def get_mask_geometry(mask):
+    """computes bounding box(min, max, center), center of mass(com) and area of a binary mask
+
+    Args:
+        mask: binary (boolean) mask
+
+    Returns:
+        min_x, max_x, min_y, max_y, ctr_x, ctr_y, com_x, com_y
+    """
+    x, y = np.where(mask.astype(bool))
+    min_x, max_x = np.min(x), np.max(x)
+    min_y, max_y = np.min(y), np.max(y)
+    ctr_x, ctr_y = (min_x + max_x) / 2, (min_y + max_y) / 2
+    com_x, com_y = np.mean(x), np.mean(y)
+    area = np.sum(mask)
+    return min_x, max_x, min_y, max_y, ctr_x, ctr_y, com_x, com_y, area
+
+
+# analysis: connected components
+
+def analysis_conn_comp(images_path, fn_preprocess, struct_elem=SQUARE_STRUCT, max_files=None, max_slices=None):
+
+    data_conn_comp = []
+
+    images_list = os.listdir(images_path)
+    if max_files is not None and max_files < len(images_list):
+        # select random files
+        images_list = random.sample(images_list, max_files)
+
+    for filename in tqdm(images_list, desc='analyze pixel values'):
+
+        if not (filename.endswith("image.nii.gz") or filename.endswith("image.nii")):
+            print('WARNING: Directory structure is not as expected. Ignoring file', filename)
+            continue
+
+        # read scan
+        filepath = os.path.join(images_path, filename)
+        raw_scan = nib.load(filepath).get_fdata().T.astype(float)
+        scan = fn_preprocess(raw_scan)  # (z, x, y)
+
+        public_id = filename.split('-')[0]
+
+        slice_idxs = range(scan.shape[0])
+        if max_slices is not None and max_slices < len(slice_idxs):
+            # select random slices
+            slice_idxs = random.sample(slice_idxs, max_slices)
+
+        for slice_idx in slice_idxs:
+            slice_ = scan[slice_idx]
+            labeled_img, num_labels = identify_components(slice_, struct_elem=struct_elem)
+            if num_labels == 0:
+                # no connected components other than background
+                continue
+            largest_component_label = largest_component(labeled_img)
+
+            for lab in range(num_labels):
+                mask = labeled_img == lab
+                min_x, max_x, min_y, max_y, ctr_x, ctr_y, com_x, com_y, area = get_mask_geometry(mask)
+                data_conn_comp.append(
+                    [public_id, slice_idx, lab, lab == largest_component_label,
+                     min_x, max_x, min_y, max_y,
+                     ctr_x, ctr_y, com_x, com_y, area]
+                )
+
+        # save ckpt to disk
+        df_conn_comp = pd.DataFrame(data_conn_comp, columns=[
+            'public_id', 'slice_idx', 'conn_comp_label', 'is_largest',
+            'min_x', 'max_x', 'min_y', 'max_y',
+            'ctr_x', 'ctr_y', 'com_x', 'com_y', 'area'
+        ])
+        df_conn_comp.to_csv('conn_comp_ckpt.csv', index=False)
+
+    print('Done!')
+
+    return df_conn_comp
+
+
+# compute-or-load
+
+def compute_or_load_fracture_analysis(analysis_root, labels_path, rib_data):
+    scan_path = os.path.join(analysis_root, 'scan.csv')
+    frac_path = os.path.join(analysis_root, 'frac.csv')
+
+    if os.path.exists(scan_path) and os.path.exists(frac_path):
+        df_scan = pd.read_csv(scan_path)
+        df_frac = pd.read_csv(frac_path)
+        print('Loaded existing analysis')
+    else:
+        print('No existing analysis found, computing...')
+        df_scan, df_frac = analysis_fracture_labels(labels_path, rib_data)
+        os.makedirs(analysis_root, exist_ok=True)
+        df_scan.to_csv(scan_path, index=False)
+        df_frac.to_csv(frac_path, index=False)
+        print('Saved files:',
+              scan_path,
+              frac_path,
+              sep='\n\t')
+
+    # fix: ignore background if present
+    df_frac = df_frac[df_frac['frac_code'] != 0].reset_index(drop=True)
+
+    return df_scan, df_frac
+
+
+def compute_or_load_pixel_analysis(analysis_root, images_path, fn_preprocess, align='top'):  # TODO: tmp - ignores cum
+    #cum_scans_path = os.path.join(analysis_root, f'cum_scan_align{align}.npy')
+    avg_scan_path = os.path.join(analysis_root, f'avg_scan_align{align}.npy')
+    params_path = os.path.join(analysis_root, 'params.json')
+
+    if os.path.exists(avg_scan_path):
+        #cum_scan = np.load(cum_scans_path)
+        avg_scan = np.load(avg_scan_path)
+        params = load_params_json(params_path)
+        mean, std, max_values = params['mean'], params['std'], params['max_values']
+        print('Loaded existing analysis')
+    else:
+        print('No existing analysis found, computing...')
+        mean, std, _, avg_scan, max_values = analysis_pixel_values(images_path, fn_preprocess, align=align)
+        #np.save(cum_scans_path, cum_scan)
+        np.save(avg_scan_path, avg_scan)
+        update_params_json(params_path, mean=mean, std=std, max_values=max_values)
+        print('Saved files:',
+              params_path,
+              #cum_scans_path,
+              avg_scan_path,
+              sep='\n\t')
+
+    return mean, std, None, avg_scan, max_values
+
+
+def compute_or_load_eq(analysis_root, cum_scan, avg_scan, *, align):
+    cum_slice = cum_scan.sum(axis=0)
+    avg_slice = avg_scan.sum(axis=0)
+
+    if os.path.exists(os.path.join(analysis_root, f'cum_scan_align{align}_eq.npy')):
+        cum_slice_eq = np.load(os.path.join(analysis_root, f'cum_slice_align{align}_eq.npy'))
+        cum_scan_eq = np.load(os.path.join(analysis_root, f'cum_scan_align{align}_eq.npy'))
+        cum_scan_eq_slicewise = np.load(os.path.join(analysis_root, f'cum_scan_align{align}_eq_slicewise.npy'))
+        avg_slice_eq = np.load(os.path.join(analysis_root, f'avg_slice_align{align}_eq.npy'))
+        avg_scan_eq = np.load(os.path.join(analysis_root, f'avg_scan_align{align}_eq.npy'))
+        avg_scan_eq_slicewise = np.load(os.path.join(analysis_root, f'avg_scan_align{align}_eq_slicewise.npy'))
+        print('Loaded existing analysis')
+    else:
+        print('No existing analysis found, computing...')
+        cum_scan_ = minmax(cum_scan)
+        cum_slice_ = minmax(cum_slice)
+        avg_scan_ = minmax(avg_scan)
+        avg_slice_ = minmax(avg_slice)
+        cum_slice_eq = histogram_equalization(cum_slice_)
+        cum_scan_eq = histogram_equalization(cum_scan_)
+        cum_scan_eq_slicewise = equalize_per_slice(cum_scan_)
+        avg_slice_eq = histogram_equalization(avg_slice_)
+        avg_scan_eq = histogram_equalization(avg_scan_)
+        avg_scan_eq_slicewise = equalize_per_slice(avg_scan_)
+        np.save(os.path.join(analysis_root, f'cum_slice_align{align}_eq.npy'), cum_slice_eq)
+        np.save(os.path.join(analysis_root, f'cum_scan_align{align}_eq.npy'), cum_scan_eq)
+        np.save(os.path.join(analysis_root, f'cum_scan_align{align}_eq_slicewise.npy'), cum_scan_eq_slicewise)
+        np.save(os.path.join(analysis_root, f'avg_slice_align{align}_eq.npy'), avg_slice_eq)
+        np.save(os.path.join(analysis_root, f'avg_scan_align{align}_eq.npy'), avg_scan_eq)
+        np.save(os.path.join(analysis_root, f'avg_scan_align{align}_eq_slicewise.npy'), avg_scan_eq_slicewise)
+        print('Saved files:',
+            os.path.join(analysis_root, f'cum_slice_align{align}_eq.npy'),
+            os.path.join(analysis_root, f'cum_scan_align{align}_eq.npy'),
+            os.path.join(analysis_root, f'cum_scan_align{align}_eq_slicewise.npy'),
+            os.path.join(analysis_root, f'avg_slice_align{align}_eq.npy'),
+            os.path.join(analysis_root, f'avg_scan_align{align}_eq.npy'),
+            os.path.join(analysis_root, f'avg_scan_align{align}_eq_slicewise.npy'),
+            sep='\n\t')
+
+    out = (cum_scan, cum_slice, cum_slice_eq, cum_scan_eq, cum_scan_eq_slicewise,
+           avg_scan, avg_slice, avg_slice_eq, avg_scan_eq, avg_scan_eq_slicewise)
+    return out
+
+
+def compute_or_load_conn_comp_analysis(analysis_root, images_path, fn_preprocess, max_files=None, max_slices=None):
+    path = os.path.join(analysis_root, 'conn_comp.csv')
+
+    if os.path.exists(path):
+        df_conn_comp = pd.read_csv(path)
+        print('Loaded existing analysis')
+    else:
+        print('No existing analysis found, computing...')
+        df_conn_comp = analysis_conn_comp(
+            images_path, fn_preprocess,
+            struct_elem=SQUARE_STRUCT,
+            max_files=max_files, max_slices=max_slices
+        )
+        os.makedirs(analysis_root, exist_ok=True)
+        df_conn_comp.to_csv(path, index=False)
+        print('Saved files:', path, sep='\n\t')
+
+    return df_conn_comp
+
+
+# main
 
 if __name__ == '__main__':
     DATA_ROOT = os.path.join(os.environ['HOME'], 'rib-fracture', 'data')
@@ -520,48 +814,140 @@ if __name__ == '__main__':
     TRAIN_LABELS = os.path.join(DATASET_ROOT, 'ribfrac-train-labels')
     TRAIN_INFO = os.path.join(DATASET_ROOT, 'ribfrac-train-info.csv')
 
-    def preprocess1(img):
-        """
-        First step of preprocessing: clip values (top and bottom) and minmax-normalize. 
-        """
-        clip_min_val = 100  # design hyperparameter
-        clip_max_val = 8000  # design hyperparameter
-        img = img.clip(clip_min_val, clip_max_val)
-        img = (img - img.min()) / (img.max() - img.min())
-        return img
+    # def preprocess1(img):
+    #     """
+    #     First step of preprocessing: clip values (top and bottom) and minmax-normalize.
+    #     """
+    #     clip_min_val = 100  # design hyperparameter
+    #     clip_max_val = 1600  # design hyperparameter
+    #     img = img.clip(clip_min_val, clip_max_val)
+    #     img = (img - clip_min_val) / (clip_max_val - clip_min_val)
+    #     return img
+    #
+    # #rib_data = compute_rib_data([TRAIN_INFO])
+    #
+    # print('\nFRACTURE ANALYSIS')
+    # #_, _ = compute_or_load_fracture_analysis(ANALYSIS_ROOT, TRAIN_LABELS, rib_data)
+    #
+    # #mean, std, cum_scan_bottom, avg_scan_bottom, max_values = compute_or_load_pixel_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, lambda x: np.clip(x, 100, None), align='bottom')
+    #
+    # print('\nPIXEL ANALYSIS')
+    # for align in ['top', 'bottom', 'center', 'fit']:
+    #     break  # TODO: compute this!
+    #     print('\nALIGN={}'.format(align))
+    #     _, _, cum_scan, avg_scan = compute_or_load_pixel_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, preprocess1, align=align)
+    #     #_ = compute_or_load_eq(ANALYSIS_ROOT, cum_scan, avg_scan, align=align)  # TODO: tmp - ignore eq
+    #
+    # print('\nCONNECTED COMPONENTS ANALYSIS')
+    # #_ = compute_or_load_conn_comp_analysis(ANALYSIS_ROOT, TRAIN_IMAGES, preprocess1, max_files=100, max_slices=50)
 
-    cum_scans_path = os.path.join(ANALYSIS_ROOT, 'cum_scan.npy')
-    avg_scan_path = os.path.join(ANALYSIS_ROOT, 'avg_scan.npy')
-    params_path = os.path.join(ANALYSIS_ROOT, 'params.json')
 
-    mean, std, cum_scan, avg_scan = analysis_pixel_values(TRAIN_IMAGES, preprocess1)
-    np.save(cum_scans_path, cum_scan)
-    np.save(avg_scan_path, avg_scan)
-    update_params_json(params_path, mean=mean, std=std)
+    ## statistics
 
-    for align in ['bottom', 'center', 'fit']:
-        cum_path = os.path.join(ANALYSIS_ROOT, 'cum_scan_align{}.npy'.format(align))
-        avg_path = os.path.join(ANALYSIS_ROOT, 'avg_scan_align{}.npy'.format(align))
-        _, _, cum, avg = analysis_pixel_values(TRAIN_IMAGES, preprocess1, cum_align=align)
-        np.save(cum_path, cum)
-        np.save(avg_path, avg)
+    import torch.utils.data as data
 
-    cum_slice = cum_scan.sum(axis=0)
-    avg_slice = avg_scan.sum(axis=0)
-    cum_scan = minmax(cum_scan)
-    cum_slice = minmax(cum_slice)
-    avg_scan = minmax(avg_scan)
-    avg_slice = minmax(avg_slice)
-    cum_slice_eq = histogram_equalization(cum_slice)
-    cum_scan_eq = histogram_equalization(cum_scan)
-    cum_scan_eq_slicewise = equalize_per_slice(cum_scan)
-    avg_slice_eq = histogram_equalization(avg_slice)
-    avg_scan_eq = histogram_equalization(avg_scan)
-    avg_scan_eq_slicewise = equalize_per_slice(avg_scan)
-    np.save(os.path.join(ANALYSIS_ROOT, 'cum_slice_eq.npy'), cum_slice_eq)
-    np.save(os.path.join(ANALYSIS_ROOT, 'cum_scan_eq.npy'), cum_scan_eq)
-    np.save(os.path.join(ANALYSIS_ROOT, 'cum_scan_eq_slicewise.npy'), cum_scan_eq_slicewise)
-    np.save(os.path.join(ANALYSIS_ROOT, 'avg_slice_eq.npy'), avg_slice_eq)
-    np.save(os.path.join(ANALYSIS_ROOT, 'avg_scan_eq.npy'), avg_scan_eq)
-    np.save(os.path.join(ANALYSIS_ROOT, 'avg_scan_eq_slicewise.npy'), avg_scan_eq_slicewise)
-    
+    DATASET_ROOT = '/media/eggonz/WD Elements/research/datasets/ribfrac'
+
+    class Cfg:
+        data_root = DATASET_ROOT
+        context_size = 0
+        patch_original_size = 64
+        patch_final_size = 256
+        proportion_fracture_in_patch = 0.05
+        cutoff_height = 450 + 32
+        clip_min_val = 100
+        clip_max_val = 2000
+        test_stride = 32
+        force_data_info = False
+        seed = 42
+        batch_size_train = 64
+        num_workers = 2  # 18
+
+
+    cfg = Cfg()
+
+    import sys
+
+    REPO_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+    sys.path.append(sys.path.append(os.path.abspath('..')))
+    from dataset import RibFracDataset
+
+    train_set = RibFracDataset(
+        root_dir=cfg.data_root,
+        partition="train",
+        context_size=cfg.context_size,
+        patch_original_size=cfg.patch_original_size,
+        patch_final_size=cfg.patch_final_size,
+        proportion_fracture_in_patch=cfg.proportion_fracture_in_patch,
+        cutoff_height=cfg.cutoff_height,
+        clip_min_val=cfg.clip_min_val,
+        clip_max_val=cfg.clip_max_val,
+        test_stride=cfg.test_stride,
+        force_data_info=cfg.force_data_info,
+    )
+    train_sampler = train_set.get_train_sampler(seed=cfg.seed)
+    train_loader = data.DataLoader(
+        train_set,
+        sampler=train_sampler,
+        batch_size=cfg.batch_size_train,
+        drop_last=True,
+        pin_memory=True,
+        num_workers=cfg.num_workers,
+    )
+
+    LOG_FILE = os.path.join(REPO_ROOT, 'statistics_log.csv')
+    OUT_FILE = os.path.join(REPO_ROOT, 'statistics.json')
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
+    with open(LOG_FILE, 'w') as f:
+        f.write('n,mean,std\n')
+
+    # accumulators
+    sum_vals = 0
+    sum_val2s = 0
+    n_vals = 0
+
+    # stop conditions
+    max_n_patches = 10000  # max 33280
+    epsilon = 1e-6
+
+    prev_mean = 1e-15
+    prev_std = 1e-15
+
+    i = -1
+    for i, (patch, label) in enumerate(train_loader):
+
+        sum_vals += patch.sum().item()
+        sum_val2s += (patch ** 2).sum().item()
+        n_vals += patch.numel()
+
+        if (i+1) % 10 == 0:
+            # compute statistics
+            mean = sum_vals / n_vals
+            std = np.sqrt(sum_val2s / n_vals - mean ** 2)
+
+            # log
+            print('n={}, mean={}, std={}'.format(i+1, mean, std))
+            with open(LOG_FILE, 'a') as f:
+                f.write('{},{},{}\n'.format(i+1, mean, std))
+
+            # check convergence
+            print('Convergence values: mean={}, std={}'.format(abs((mean - prev_mean) / prev_mean), abs((std - prev_std) / prev_std)))
+            converged = (abs((mean - prev_mean) / prev_mean) < epsilon and abs((std - prev_std) / prev_std) < epsilon)
+            if converged or i+1 >= max_n_patches:
+                print(f"Converged at {i+1}!" if converged else "Max number of patches reached!")
+                break
+
+            prev_mean = mean
+            prev_std = std
+
+        t0 = time.time()
+
+    # compute statistics
+    mean = sum_vals / n_vals
+    std = np.sqrt(sum_val2s / n_vals - mean ** 2)
+
+    print('END n={}, mean={}, std={}'.format(i+1, mean, std))
+    with open(OUT_FILE, 'w') as f:
+        json.dump({'n': i+1, 'mean': mean, 'std': std}, f, indent=2)
+

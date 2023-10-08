@@ -70,6 +70,18 @@ if __name__ == "__main__":
         help="Upper threshold to clip intensity values.",
     )
     parser.add_argument(
+        "--data-mean",
+        type=float,
+        default=0.026828503255875637,
+        help="Mean for data standardization.",
+    )
+    parser.add_argument(
+        "--data-std",
+        type=float,
+        default=0.0841274274493532,
+        help="Standard deviation for data standardization.",
+    )
+    parser.add_argument(
         "--test-stride", type=int, default=32, help="Stride for test/val patches."
     )
     parser.add_argument(
