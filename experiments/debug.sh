@@ -24,3 +24,5 @@ python train.py --data-root DATA_ROOT --use-model unet3plus-ds --context-size 0 
 # exp3: context=8, no cgm
 python train.py --data-root DATA_ROOT --use-model unet3plus-ds --context-size 8 --max-epochs 1 --batch-size-train 1
 
+# exp4: context=8, positional encodings
+#python train.py --data-root DATA_ROOT --use-model unet3plus-ds --context-size 8 --use-positional-encodings --max-epochs 1 --batch-size-train 1
