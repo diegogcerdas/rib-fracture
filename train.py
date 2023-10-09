@@ -151,6 +151,8 @@ if __name__ == "__main__":
         cutoff_height=cfg.cutoff_height,
         clip_min_val=cfg.clip_min_val,
         clip_max_val=cfg.clip_max_val,
+        data_mean=cfg.data_mean,
+        data_std=cfg.data_std,
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
     )
@@ -174,6 +176,8 @@ if __name__ == "__main__":
         cutoff_height=cfg.cutoff_height,
         clip_min_val=cfg.clip_min_val,
         clip_max_val=cfg.clip_max_val,
+        data_mean=cfg.data_mean,
+        data_std=cfg.data_std,
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
     )

@@ -19,6 +19,8 @@ class ConfigTrain:
     cutoff_height: int
     clip_min_val: int
     clip_max_val: int
+    data_mean: float
+    data_std: float
     test_stride: int
     force_data_info: bool
     download_data: bool
