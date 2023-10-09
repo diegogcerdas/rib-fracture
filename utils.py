@@ -21,6 +21,7 @@ class ConfigTrain:
     clip_max_val: int
     test_stride: int
     force_data_info: bool
+    download_data: bool
     context_size: int
     seed: int
     learning_rate: float

@@ -11,7 +11,7 @@ from pytorch_lightning.loggers import WandbLogger
 
 import wandb
 from dataset import RibFracDataset
-from model import UnetModule
+from model import UNet3plusModule
 from utils import (SaveCheckpointAtHomeCallback, SetEpochCallback,
                    config_from_args)
 
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     cfg = config_from_args(args, mode="train")
 
     # Download data
-    if cfg.download_data and not os.path.exists(cfg.data_root):
+    if cfg.download_data:
         HERE = os.path.dirname(os.path.realpath(__file__))
         scriptfile = os.path.join(HERE, "ribfrac_download.sh")
         logfile = os.path.join(HERE, "ribfrac_download.log")
@@ -186,7 +186,7 @@ if __name__ == "__main__":
         num_workers=cfg.num_workers,
     )
 
-    model = UnetModule(
+    model = UNet3plusModule(
         n_channels=1 + 2 * cfg.context_size,
         learning_rate=cfg.learning_rate,
         weight_decay=cfg.weight_decay,

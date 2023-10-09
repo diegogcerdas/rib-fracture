@@ -14,10 +14,12 @@
 #
 #####
 
-DATASET_ROOT=$1  # data/ribfrac
+DATASET_ROOT=$1  # data/ribfrac/
 
 mkdir -p $DATASET_ROOT
 cd $DATASET_ROOT
+
+echo "[INFO] Downloading RIB-FRACTURE dataset at $(pwd)"
 
 mkdir -p download
 
