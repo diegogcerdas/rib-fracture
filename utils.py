@@ -1,6 +1,4 @@
 import dataclasses
-import os
-import shutil
 from dataclasses import dataclass
 
 import pytorch_lightning as pl
@@ -12,15 +10,18 @@ from dataset import BalancedFractureSampler
 class ConfigTrain:
     data_root: str
     ckpt_root: str
-    local_dir: str
+    resume_ckpt: str
     patch_original_size: int
     patch_final_size: int
     proportion_fracture_in_patch: float
     cutoff_height: int
     clip_min_val: int
     clip_max_val: int
+    data_mean: float
+    data_std: float
     test_stride: int
     force_data_info: bool
+    download_data: bool
     context_size: int
     seed: int
     learning_rate: float
@@ -61,23 +62,3 @@ class SetEpochCallback(pl.Callback):
         pl_module: pl.LightningModule,
     ) -> None:
         self.sampler.set_epoch(trainer.current_epoch)
-
-
-class SaveCheckpointAtHomeCallback(pl.Callback):
-    def __init__(self, local_dir: str, exp_name: str):
-        super().__init__()
-        self.local_dir = local_dir
-        self.exp_name = exp_name
-
-    def on_validation_epoch_end(
-        self,
-        trainer: pl.Trainer,
-        pl_module: pl.LightningModule,
-    ) -> None:
-        best_model_path = trainer.checkpoint_callback.best_model_path
-        print(f"Saving {best_model_path} locally...")
-        if os.path.exists(best_model_path):
-            shutil.copy(
-                best_model_path,
-                os.path.join(self.local_dir, f"/best_model_{self.exp_name}.ckpt"),
-            )

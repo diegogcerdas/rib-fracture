@@ -6,14 +6,13 @@ from argparse import BooleanOptionalAction
 import pytorch_lightning as pl
 import torch
 import torch.utils.data as data
+import wandb
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
-import wandb
 from dataset import RibFracDataset
 from model import UnetModule
-from utils import (SaveCheckpointAtHomeCallback, SetEpochCallback,
-                   config_from_args)
+from utils import SetEpochCallback, config_from_args
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -29,10 +28,10 @@ if __name__ == "__main__":
         help="Root directory for checkpoints.",
     )
     parser.add_argument(
-        "--local-dir",
+        "--resume-ckpt",
         type=str,
-        default="/home/username/",
-        help="Local directory to safeguard best checkpoint.",
+        default=None,
+        help="Path to checkpoint to resume training.",
     )
     parser.add_argument(
         "--patch-original-size",
@@ -73,13 +72,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data-mean",
         type=float,
-        default=0.026828503255875637,
+        default=0.0268,
         help="Mean for data standardization.",
     )
     parser.add_argument(
         "--data-std",
         type=float,
-        default=0.0841274274493532,
+        default=0.0841,
         help="Standard deviation for data standardization.",
     )
     parser.add_argument(
@@ -151,6 +150,8 @@ if __name__ == "__main__":
         cutoff_height=cfg.cutoff_height,
         clip_min_val=cfg.clip_min_val,
         clip_max_val=cfg.clip_max_val,
+        data_mean=cfg.data_mean,
+        data_std=cfg.data_std,
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
     )
@@ -174,6 +175,8 @@ if __name__ == "__main__":
         cutoff_height=cfg.cutoff_height,
         clip_min_val=cfg.clip_min_val,
         clip_max_val=cfg.clip_max_val,
+        data_mean=cfg.data_mean,
+        data_std=cfg.data_std,
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
     )
@@ -186,13 +189,17 @@ if __name__ == "__main__":
         num_workers=cfg.num_workers,
     )
 
-    model = UnetModule(
-        n_channels=1 + 2 * cfg.context_size,
-        learning_rate=cfg.learning_rate,
-        weight_decay=cfg.weight_decay,
-        cutoff_height=cfg.cutoff_height,
-        data_root=cfg.data_root,
-    )
+    if cfg.resume_ckpt is not None:
+        print(f"Resuming from checkpoint {cfg.resume_ckpt}")
+        model = UnetModule.load_from_checkpoint(cfg.resume_ckpt)
+    else:
+        model = UnetModule(
+            n_channels=1 + 2 * cfg.context_size,
+            learning_rate=cfg.learning_rate,
+            weight_decay=cfg.weight_decay,
+            cutoff_height=cfg.cutoff_height,
+            data_root=cfg.data_root,
+        )
 
     logger = []
     checkpoint_callback = ModelCheckpoint(
@@ -204,7 +211,6 @@ if __name__ == "__main__":
     os.makedirs(f"{cfg.ckpt_root}/{cfg.exp_name}", exist_ok=True)
     callbacks = [
         SetEpochCallback(train_sampler),
-        # SaveCheckpointAtHomeCallback(cfg.local_dir, cfg.exp_name), # TODO: Not working right now
         checkpoint_callback,
     ]
 
@@ -227,4 +233,4 @@ if __name__ == "__main__":
         num_sanity_val_steps=0,
     )
 
-    trainer.fit(model, train_loader, val_loader)
+    trainer.fit(model, train_loader, val_loader, ckpt_path=cfg.resume_ckpt)
