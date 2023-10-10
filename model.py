@@ -200,9 +200,8 @@ class UNet3plusDsModule(BaseUnetModule):
         return loss
 
     def predict_mask(self, x):
-        d1_hat, d2_hat, d3_hat, d4_hat, d5_hat = self(x)
-        y_hat = F.sigmoid(d1_hat)
-        return y_hat
+        d1_hat, _, _, _, _ = self(x)
+        return d1_hat
 
 
 class UNet3plusDsCgmModule(BaseUnetModule):
@@ -234,9 +233,8 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         return loss
 
     def predict_mask(self, x):
-        d1_hat, d2_hat, d3_hat, d4_hat, d5_hat, cls_hat = self(x)
+        d1_hat, _, _, _, _, cls_hat = self(x)
         # cls is a tensor (B,2) with binary class probs
         cls = np.argmax(cls_hat.detach().cpu().numpy(), axis=1)
         y_hat = d1_hat * cls  # TODO test ok
-        y_hat = F.sigmoid(y_hat)
         return y_hat
