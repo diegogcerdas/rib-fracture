@@ -22,6 +22,7 @@ class ConfigTrain:
     test_stride: int
     force_data_info: bool
     download_data: bool
+    use_model: str
     context_size: int
     seed: int
     learning_rate: float

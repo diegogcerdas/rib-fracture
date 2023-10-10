@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
 from dataset import RibFracDataset
-from model import UnetModule
+from model import UNet3plusModule, UNet3plusDsModule, UNet3plusDsCgmModule
 from utils import SetEpochCallback, config_from_args
 
 if __name__ == "__main__":
@@ -99,6 +99,13 @@ if __name__ == "__main__":
 
     # Model Parameters
     parser.add_argument(
+        "--use-model",
+        type=str,
+        choices=["unet3plus", "unet3plus-ds", "unet3plus-ds-cgm"],
+        default='unet3plus',
+        help="Unet3plus model to be used. valid options: unet3plus, unet3plus-ds, unet3plus-ds-cgm",
+    )
+    parser.add_argument(
         "--context-size",
         type=int,
         default=8,
@@ -131,7 +138,8 @@ if __name__ == "__main__":
     cfg = config_from_args(args, mode="train")
 
     # Download data
-    if cfg.download_data and not os.path.exists(cfg.data_root):
+    data_exists = os.path.exists(cfg.data_root) and os.listdir(cfg.data_root)
+    if cfg.download_data and not data_exists:
         HERE = os.path.dirname(os.path.realpath(__file__))
         scriptfile = os.path.join(HERE, "ribfrac_download.sh")
         logfile = os.path.join(HERE, "ribfrac_download.log")
@@ -189,11 +197,18 @@ if __name__ == "__main__":
         num_workers=cfg.num_workers,
     )
 
+    if cfg.use_model == "unet3plus":
+        model_module = UNet3plusModule
+    elif cfg.use_model == "unet3plus-ds":
+        model_module = UNet3plusDsModule
+    elif cfg.use_model == "unet3plus-ds-cgm":
+        model_module = UNet3plusDsCgmModule
+
     if cfg.resume_ckpt is not None:
         print(f"Resuming from checkpoint {cfg.resume_ckpt}")
-        model = UnetModule.load_from_checkpoint(cfg.resume_ckpt)
+        model = model_module.load_from_checkpoint(cfg.resume_ckpt)  # FIXME verify working
     else:
-        model = UnetModule(
+        model = model_module(
             n_channels=1 + 2 * cfg.context_size,
             learning_rate=cfg.learning_rate,
             weight_decay=cfg.weight_decay,

@@ -1,58 +1,11 @@
-from math import exp
-
-import numpy as np
 import torch
 import torch.nn.functional as F
+from math import exp
+import numpy as np
 
 
-# BCE Loss
-def BCE_loss(pred, label):
-    bce_loss = nn.BCELoss(size_average=True)
-    bce_out = bce_loss(pred, label)
-    print("bce_loss:", bce_out.data.cpu().numpy())
-    return bce_out
-
-
-# IoU Loss
-def _iou(pred, target, size_average=True):
-    b = pred.shape[0]
-    IoU = 0.0
-    for i in range(0, b):
-        # compute the IoU of the foreground
-        Iand1 = torch.sum(target[i, :, :, :] * pred[i, :, :, :])
-        Ior1 = torch.sum(target[i, :, :, :]) + torch.sum(pred[i, :, :, :]) - Iand1
-        IoU1 = Iand1 / Ior1
-
-        # IoU loss is (1-IoU1)
-        IoU = IoU + (1 - IoU1)
-
-    return IoU / b
-
-
-class IOU(torch.nn.Module):
-    def __init__(self, size_average=True):
-        super(IOU, self).__init__()
-        self.size_average = size_average
-
-    def forward(self, pred, target):
-        return _iou(pred, target, self.size_average)
-
-
-def IOU_loss(pred, label):
-    iou_loss = IOU(size_average=True)
-    iou_out = iou_loss(pred, label)
-    print("iou_loss:", iou_out.data.cpu().numpy())
-    return iou_out
-
-
-# MS-SSIM Loss
 def gaussian(window_size, sigma):
-    gauss = torch.Tensor(
-        [
-            exp(-((x - window_size // 2) ** 2) / float(2 * sigma**2))
-            for x in range(window_size)
-        ]
-    )
+    gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
     return gauss / gauss.sum()
 
 
@@ -63,15 +16,7 @@ def create_window(window_size, channel=1):
     return window
 
 
-def ssim(
-    img1,
-    img2,
-    window_size=11,
-    window=None,
-    size_average=True,
-    full=False,
-    val_range=None,
-):
+def ssim(img1, img2, window_size=11, window=None, size_average=True, full=False, val_range=None):
     # Value range can be different from 255. Other common ranges are 1 (sigmoid) and 2 (tanh).
     if val_range is None:
         if torch.max(img1) > 128:
@@ -123,9 +68,7 @@ def ssim(
     return ret
 
 
-def msssim(
-    img1, img2, window_size=11, size_average=True, val_range=None, normalize=False
-):
+def msssim(img1, img2, window_size=11, size_average=True, val_range=None, normalize=False):
     device = img1.device
     weights = torch.FloatTensor([0.0448, 0.2856, 0.3001, 0.2363, 0.1333]).to(device)
     # weights = torch.FloatTensor([0.0448, 0.2856, 0.3001, 0.2363, 0.1333])
@@ -133,15 +76,8 @@ def msssim(
     mssim = []
     mcs = []
     for _ in range(levels):
-        sim, cs = ssim(
-            img1,
-            img2,
-            window_size=window_size,
-            size_average=size_average,
-            full=True,
-            val_range=val_range,
-        )
-        print("sim", sim)
+        sim, cs = ssim(img1, img2, window_size=window_size, size_average=size_average, full=True, val_range=val_range)
+        #print("sim", sim)
         mssim.append(sim)
         mcs.append(cs)
 
@@ -156,17 +92,17 @@ def msssim(
         mssim = (mssim + 1) / 2
         mcs = (mcs + 1) / 2
 
-    pow1 = mcs**weights
-    pow2 = mssim**weights
+    pow1 = mcs ** weights
+    pow2 = mssim ** weights
     # From Matlab implementation https://ece.uwaterloo.ca/~z70wang/research/iwssim/
     output = torch.prod(pow1[:-1] * pow2[-1])
     return output
 
 
 # Classes to re-use window
-class SSIM(torch.nn.Module):
+class SSIMloss(torch.nn.Module):
     def __init__(self, window_size=11, size_average=True, val_range=None):
-        super(SSIM, self).__init__()
+        super(SSIMloss, self).__init__()
         self.window_size = window_size
         self.size_average = size_average
         self.val_range = val_range
@@ -181,26 +117,18 @@ class SSIM(torch.nn.Module):
         if channel == self.channel and self.window.dtype == img1.dtype:
             window = self.window
         else:
-            window = (
-                create_window(self.window_size, channel)
-                .to(img1.device)
-                .type(img1.dtype)
-            )
+            window = create_window(self.window_size, channel).to(img1.device).type(img1.dtype)
             self.window = window
             self.channel = channel
 
-        return ssim(
-            img1,
-            img2,
-            window=window,
-            window_size=self.window_size,
-            size_average=self.size_average,
-        )
+        ssim_coef = ssim(img1, img2, window=window, window_size=self.window_size, size_average=self.size_average)
+        ssim_loss = 1 - ssim_coef
+        return ssim_loss
 
 
-class MSSSIM(torch.nn.Module):
+class MSSSIMloss(torch.nn.Module):
     def __init__(self, window_size=11, size_average=True, channel=3):
-        super(MSSSIM, self).__init__()
+        super(MSSSIMloss, self).__init__()
         self.window_size = window_size
         self.size_average = size_average
         self.channel = channel
@@ -208,10 +136,6 @@ class MSSSIM(torch.nn.Module):
     def forward(self, img1, img2):
         # TODO: store window between calls if possible,
         # return msssim(img1, img2, window_size=self.window_size, size_average=self.size_average)
-        return msssim(
-            img1,
-            img2,
-            window_size=self.window_size,
-            size_average=self.size_average,
-            normalize=True,
-        )
+        msssim_coef = msssim(img1, img2, window_size=self.window_size, size_average=self.size_average, normalize=True)
+        msssim_loss = 1 - msssim_coef
+        return msssim_loss

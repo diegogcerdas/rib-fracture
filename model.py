@@ -1,3 +1,4 @@
+import abc
 import os
 
 import nibabel as nib
@@ -6,26 +7,26 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
-from torch import optim
+from torch import optim, nn
 from tqdm import tqdm
 
-from unet3plus.model_unet3plus import Unet3Plus
+from unet3plus.loss.hybridLoss import HybridLoss
+from unet3plus.models.UNet_3Plus import UNet_3Plus, UNet_3Plus_DeepSup, UNet_3Plus_DeepSup_CGM
 
 
-class UnetModule(pl.LightningModule):
+class BaseUnetModule(pl.LightningModule, abc.ABC):
     """
     Based on https://github.com/hiepph/unet-lightning/blob/master/Unet.py
     """
 
     def __init__(
         self,
-        n_channels: int,
         learning_rate: float,
         weight_decay: float,
         cutoff_height: int,
         data_root: str,
     ):
-        super(UnetModule, self).__init__()
+        super(BaseUnetModule, self).__init__()
         self.save_hyperparameters()
 
         self.learning_rate = learning_rate
@@ -33,7 +34,8 @@ class UnetModule(pl.LightningModule):
         self.data_root = data_root
         self.cutoff_height = cutoff_height
 
-        self.network = Unet3Plus(n_channels)
+        self.network = ...  # UNet_3Plus(n_channels)
+        self.loss = ...  # F.binary_cross_entropy_with_logits
 
     def forward(self, x):
         return self.network(x)
@@ -44,12 +46,19 @@ class UnetModule(pl.LightningModule):
         )
         return optimizer
 
+    @abc.abstractmethod
     def compute_loss(self, batch, mode):
         x, y = batch
         y_hat = self(x)
-        loss = F.binary_cross_entropy_with_logits(y_hat, y)
+        loss = self.loss(y_hat, y)
         self.log_stat(f"{mode}_bce_loss", loss)
         return loss
+
+    @abc.abstractmethod
+    def predict_mask(self, x):
+        y_hat = self(x)
+        y_hat = F.sigmoid(y_hat)
+        return y_hat
 
     def update_pred_masks(self, batch):
         patches, coords, filenames, slice_idx, pts = batch
@@ -67,7 +76,7 @@ class UnetModule(pl.LightningModule):
             if coord[0] > self.cutoff_height:
                 continue
             output = (
-                resize(F.sigmoid(self(patch.unsqueeze(0))))
+                resize(self.predict_mask(patch.unsqueeze(0)))
                 .squeeze()
                 .detach()
                 .cpu()
@@ -151,3 +160,83 @@ class UnetModule(pl.LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         self.compute_eval("val")
+
+
+class UNet3plusModule(BaseUnetModule):
+    def __init__(self, n_channels, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.network = UNet_3Plus(n_channels)
+        self.loss = F.binary_cross_entropy_with_logits
+
+    def compute_loss(self, batch, mode):
+        x, y = batch
+        y_hat = self(x)
+        loss = self.loss(y_hat, y)
+        self.log_stat(f"{mode}_bce_loss", loss)
+        return loss
+
+    def predict_mask(self, x):
+        y_hat = self(x)
+        y_hat = F.sigmoid(y_hat)
+        return y_hat
+
+
+class UNet3plusDsModule(BaseUnetModule):
+    def __init__(self, n_channels, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.network = UNet_3Plus_DeepSup(n_channels)
+        self.loss = HybridLoss()
+
+    def compute_loss(self, batch, mode):
+        x, y = batch
+        d1_hat, d2_hat, d3_hat, d4_hat, d5_hat = self(x)
+        loss_d1 = self.loss(d1_hat, y)
+        loss_d2 = self.loss(d2_hat, y)
+        loss_d3 = self.loss(d3_hat, y)
+        loss_d4 = self.loss(d4_hat, y)
+        loss_d5 = self.loss(d5_hat, y)
+        loss = loss_d1 + loss_d2 + loss_d3 + loss_d4 + loss_d5  # TODO tmp: direct supervision on each level
+        self.log_stat(f"{mode}_hybrid_loss", loss)  # TODO compute and log losses separately
+        return loss
+
+    def predict_mask(self, x):
+        d1_hat, d2_hat, d3_hat, d4_hat, d5_hat = self(x)
+        y_hat = F.sigmoid(d1_hat)
+        return y_hat
+
+
+class UNet3plusDsCgmModule(BaseUnetModule):
+    def __init__(self, n_channels, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.network = UNet_3Plus_DeepSup_CGM(n_channels)
+        self.seg_loss = HybridLoss()
+        self.bce_loss = F.binary_cross_entropy_with_logits
+
+    def compute_loss(self, batch, mode):
+        x, y = batch
+        d1_hat, d2_hat, d3_hat, d4_hat, d5_hat, cls_hat = self(x)
+
+        loss_d1 = self.seg_loss(d1_hat, y)
+        loss_d2 = self.seg_loss(d2_hat, y)
+        loss_d3 = self.seg_loss(d3_hat, y)
+        loss_d4 = self.seg_loss(d4_hat, y)
+        loss_d5 = self.seg_loss(d5_hat, y)
+        loss_seg = loss_d1 + loss_d2 + loss_d3 + loss_d4 + loss_d5  # TODO tmp: direct supervision on each level
+
+        cls_true = (y.sum(dim=(1, 2, 3)) > 0).long()  # cls=0/1
+        cls_true = F.one_hot(cls_true, num_classes=cls_hat.shape[1]).float()  # one-hot encoded, same shape as cls_hat
+        loss_cls = self.bce_loss(cls_hat, cls_true)
+
+        loss = loss_seg + loss_cls  # TODO lambda weight
+        self.log_stat(f"{mode}_segmentation_loss", loss_seg)  # TODO compute and log losses separately
+        self.log_stat(f"{mode}_classification_loss", loss_cls)
+        self.log_stat(f"{mode}_loss", loss)
+        return loss
+
+    def predict_mask(self, x):
+        d1_hat, d2_hat, d3_hat, d4_hat, d5_hat, cls_hat = self(x)
+        # cls is a tensor (B,2) with binary class probs
+        cls = np.argmax(cls_hat.detach().cpu().numpy(), axis=1)
+        y_hat = d1_hat * cls  # TODO test ok
+        y_hat = F.sigmoid(y_hat)
+        return y_hat
