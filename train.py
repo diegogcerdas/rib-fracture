@@ -11,7 +11,7 @@ from pytorch_lightning.loggers import WandbLogger
 
 import wandb
 from dataset import RibFracDataset
-from model import UNet3plusModule
+from model import UNet3plusModule, UNet3plusDsModule, UNet3plusDsCgmModule
 from utils import (SaveCheckpointAtHomeCallback, SetEpochCallback,
                    config_from_args)
 
@@ -99,6 +99,13 @@ if __name__ == "__main__":
     )
 
     # Model Parameters
+    parser.add_argument(
+        "--use-model",
+        type=str,
+        choices=["unet3plus", "unet3plus-ds", "unet3plus-ds-cgm"],
+        default='unet3plus',
+        help="Unet3plus model to be used. valid options: unet3plus, unet3plus-ds, unet3plus-ds-cgm",
+    )
     parser.add_argument(
         "--context-size",
         type=int,
@@ -191,7 +198,13 @@ if __name__ == "__main__":
         num_workers=cfg.num_workers,
     )
 
-    model = UNet3plusModule(
+    if cfg.use_model == "unet3plus":
+        model_module = UNet3plusModule
+    elif cfg.use_model == "unet3plus-ds":
+        model_module = UNet3plusDsModule
+    elif cfg.use_model == "unet3plus-ds-cgm":
+        model_module = UNet3plusDsCgmModule
+    model = model_module(
         n_channels=1 + 2 * cfg.context_size,
         learning_rate=cfg.learning_rate,
         weight_decay=cfg.weight_decay,

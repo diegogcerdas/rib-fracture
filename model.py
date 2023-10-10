@@ -223,8 +223,8 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         loss_d5 = self.seg_loss(d5_hat, y)
         loss_seg = loss_d1 + loss_d2 + loss_d3 + loss_d4 + loss_d5  # TODO tmp: direct supervision on each level
 
-        cls_true = torch.zeros_like(cls_hat)
-        cls_true[:, y.sum(dim=(1, 2, 3)) > 0] = 1
+        cls_true = (y.sum(dim=(1, 2, 3)) > 0).long()  # cls=0/1
+        cls_true = F.one_hot(cls_true, num_classes=cls_hat.shape[1]).float()  # one-hot encoded, same shape as cls_hat
         loss_cls = self.bce_loss(cls_hat, cls_true)
 
         loss = loss_seg + loss_cls  # TODO lambda weight

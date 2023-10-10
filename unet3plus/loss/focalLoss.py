@@ -12,8 +12,8 @@ def _focal(y_true, y_pred, size_average=True, gamma=2., alpha=4., epsilon=1.e-9)
     ce = - y_true_c * torch.log(model_out)
     weight = y_true_c * torch.pow(1 - model_out, gamma)
     fl = alpha * weight * ce
-    reduced_fl = torch.max(fl, dim=-1)
-    if size_average:  # TODO verify ok
+    reduced_fl = torch.max(fl, dim=-1).values
+    if size_average:
         return reduced_fl.mean()
     else:
         return reduced_fl.sum()

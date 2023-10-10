@@ -725,7 +725,7 @@ class UNet_3Plus_DeepSup_CGM(nn.Module):
         # -------------Classification-------------
         cls_branch = self.cls(hd5).squeeze(3).squeeze(2)  # (B,N,1,1)->(B,N)
         cls_branch_max = cls_branch.argmax(dim=1)
-        cls_branch_max = cls_branch_max[:, np.newaxis].float()
+        cls_branch_max = cls_branch_max[:, None].float()
 
         ## -------------Decoder-------------
         h1_PT_hd4 = self.h1_PT_hd4_relu(self.h1_PT_hd4_bn(self.h1_PT_hd4_conv(self.h1_PT_hd4(h1))))
