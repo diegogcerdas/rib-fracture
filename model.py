@@ -25,6 +25,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         weight_decay: float,
         cutoff_height: int,
         data_root: str,
+        log_every_step: bool = False,
     ):
         super(BaseUnetModule, self).__init__()
         self.save_hyperparameters()
@@ -33,6 +34,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         self.weight_decay = weight_decay
         self.data_root = data_root
         self.cutoff_height = cutoff_height
+        self.log_every_step = log_every_step
 
         self.network = ...  # UNet_3Plus(n_channels)
         self.loss = ...  # F.binary_cross_entropy_with_logits
@@ -138,14 +140,15 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         for threshold in thresholds:
             dice_scores[threshold] = np.mean(dice_scores[threshold])
             self.log_stat(
-                f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice_scores[threshold]
+                f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice_scores[threshold], on_step=False
             )
 
-    def log_stat(self, name, stat):
+    def log_stat(self, name, stat, on_step=True):
+        on_step = on_step and self.log_every_step
         self.log(
             name,
             stat,
-            on_step=False,
+            on_step=on_step,
             on_epoch=True,
             prog_bar=True,
             logger=True,

@@ -8,7 +8,7 @@ import torch
 import torch.utils.data as data
 import wandb
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import WandbLogger, CSVLogger
 
 from dataset import RibFracDataset
 from model import UNet3plusModule, UNet3plusDsModule, UNet3plusDsCgmModule
@@ -121,6 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", type=int, default=18)
     parser.add_argument("--max-epochs", type=int, default=1000)
     parser.add_argument("--exp-name", type=str, default="test-run")
+    parser.add_argument("--log-every-step", action=BooleanOptionalAction, default=False)
     parser.add_argument(
         "--device",
         type=str,
@@ -206,7 +207,7 @@ if __name__ == "__main__":
 
     if cfg.resume_ckpt is not None:
         print(f"Resuming from checkpoint {cfg.resume_ckpt}")
-        model = model_module.load_from_checkpoint(cfg.resume_ckpt)  # FIXME verify working
+        model = model_module.load_from_checkpoint(cfg.resume_ckpt)
     else:
         model = model_module(
             n_channels=1 + 2 * cfg.context_size,
@@ -214,9 +215,11 @@ if __name__ == "__main__":
             weight_decay=cfg.weight_decay,
             cutoff_height=cfg.cutoff_height,
             data_root=cfg.data_root,
+            log_every_step=cfg.log_every_step,
         )
 
     logger = []
+    logger.append(CSVLogger("./logs/", name=cfg.exp_name, flush_logs_every_n_steps=1))
     checkpoint_callback = ModelCheckpoint(
         dirpath=f"{cfg.ckpt_root}/{cfg.exp_name}",
         save_top_k=1,
@@ -246,6 +249,7 @@ if __name__ == "__main__":
         logger=logger,
         callbacks=callbacks,
         num_sanity_val_steps=0,
+        log_every_n_steps=1
     )
 
     trainer.fit(model, train_loader, val_loader, ckpt_path=cfg.resume_ckpt)

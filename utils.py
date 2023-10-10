@@ -31,6 +31,7 @@ class ConfigTrain:
     batch_size_test: int
     num_workers: int
     max_epochs: int
+    log_every_step: bool
     device: str
     do_wandb: bool
     exp_name: str
