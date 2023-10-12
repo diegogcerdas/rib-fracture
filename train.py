@@ -132,6 +132,7 @@ if __name__ == "__main__":
 
     # WandB Parameters
     parser.add_argument("--do-wandb", action=BooleanOptionalAction, default=False)
+    parser.add_argument("--wandb-key", type=str, default=None)
     parser.add_argument("--wandb-project", type=str, default="ribfrac_team7")
     parser.add_argument("--wandb-entity", type=str, default="username")
     parser.add_argument("--wandb-mode", type=str, default="online")
@@ -232,6 +233,7 @@ if __name__ == "__main__":
 
     logger = []
     if cfg.do_wandb:
+        wandb.login(key=cfg.wandb_key)
         wandb.init(
             name=cfg.exp_name,
             project=cfg.wandb_project,

@@ -37,6 +37,7 @@ class ConfigTrain:
     log_every_step: bool
     device: str
     do_wandb: bool
+    wandb_key: str
     exp_name: str
     wandb_project: str
     wandb_entity: str
