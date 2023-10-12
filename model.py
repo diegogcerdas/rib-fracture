@@ -143,14 +143,14 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
                 f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice_scores[threshold], on_step=False
             )
 
-    def log_stat(self, name, stat, on_step=True):
+    def log_stat(self, name, stat, on_step=True, prog_bar=False):
         on_step = on_step and self.log_every_step
         self.log(
             name,
             stat,
             on_step=on_step,
             on_epoch=True,
-            prog_bar=True,
+            prog_bar=prog_bar,
             logger=True,
         )
 
@@ -159,10 +159,13 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        self.compute_loss(batch, "val")
+
+    def test_step(self, batch, batch_idx):
         self.update_pred_masks(batch)
 
-    def on_validation_epoch_end(self) -> None:
-        self.compute_eval("val")
+    def on_test_epoch_end(self) -> None:
+        self.compute_eval("test")
 
 
 class UNet3plusModule(BaseUnetModule):
@@ -175,7 +178,7 @@ class UNet3plusModule(BaseUnetModule):
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        self.log_stat(f"{mode}_bce_loss", loss)
+        self.log_stat(f"{mode}_loss", loss, prog_bar=True)
         return loss
 
     def predict_mask(self, x):
@@ -199,7 +202,7 @@ class UNet3plusDsModule(BaseUnetModule):
             loss_d = self.loss(d_hat, y)
             loss += loss_d
             self.log_stat(f"{mode}_hybrid_loss_d{i+1}", loss_d)
-        self.log_stat(f"{mode}_hybrid_loss", loss)
+        self.log_stat(f"{mode}_loss", loss, prog_bar=True)
         return loss
 
     def predict_mask(self, x):
@@ -232,12 +235,13 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         loss = loss_seg + loss_cls  # TODO lambda weight
         self.log_stat(f"{mode}_segmentation_loss", loss_seg)
         self.log_stat(f"{mode}_classification_loss", loss_cls)
-        self.log_stat(f"{mode}_loss", loss)
+        self.log_stat(f"{mode}_loss", loss, prog_bar=True)
         return loss
 
     def predict_mask(self, x):
         d1_hat, _, _, _, _, cls_hat = self(x)
         # cls is a tensor (B,2) with binary class probs
-        cls = np.argmax(cls_hat.detach().cpu().numpy(), axis=1)
+        cls = torch.argmax(cls_hat, dim=1)
+
         y_hat = d1_hat * cls  # TODO test ok
         return y_hat

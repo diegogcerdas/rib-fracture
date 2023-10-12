@@ -164,7 +164,7 @@ if __name__ == "__main__":
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
     )
-    train_sampler = train_set.get_train_sampler(seed=cfg.seed)
+    train_sampler = train_set.get_balanced_sampler(seed=cfg.seed)
     train_loader = data.DataLoader(
         train_set,
         sampler=train_sampler,
@@ -189,7 +189,7 @@ if __name__ == "__main__":
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
     )
-    val_sampler = val_set.get_test_sampler()
+    val_sampler = val_set.get_balanced_sampler(seed=cfg.seed)
     val_loader = data.DataLoader(
         val_set,
         sampler=val_sampler,
@@ -223,8 +223,8 @@ if __name__ == "__main__":
     checkpoint_callback = ModelCheckpoint(
         dirpath=f"{cfg.ckpt_root}/{cfg.exp_name}",
         save_top_k=1,
-        monitor="val_dice_coeff_0.5",
-        mode="max",
+        monitor="val_loss",
+        mode="min",
     )
     os.makedirs(f"{cfg.ckpt_root}/{cfg.exp_name}", exist_ok=True)
     callbacks = [
