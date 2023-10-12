@@ -2,7 +2,7 @@
 
 #SBATCH --partition=gpu
 #SBATCH --gpus-per-node=1
-#SBATCH --job-name=rf_exp0
+#SBATCH --job-name=rf_exp5
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
 #SBATCH --time=10:00:00
@@ -22,4 +22,4 @@ WANDB_USER=
 
 cd ~/rib-fracture
 
-python train.py --exp-name exp0 --use-model unet3plus --context-size 0 --do-wandb --wandb-key $WANDB_KEY --wandb-entity $WANDB_USER --data-root $DATA_ROOT --download-data  --max-epochs 10 --batch-size-train 32 --batch-size-test 32 --patch-final-size 128
+python train.py --exp-name exp5 --use-model unet3plus-ds-cgm --context-size 8 --do-wandb --wandb-key $WANDB_KEY --wandb-entity $WANDB_USER --data-root $DATA_ROOT --download-data  --max-epochs 10 --batch-size-train 32 --batch-size-test 32 --patch-final-size 128
