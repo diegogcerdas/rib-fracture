@@ -12,7 +12,7 @@ from pytorch_lightning.loggers import WandbLogger, CSVLogger
 
 from dataset import RibFracDataset
 from model import UNet3plusModule, UNet3plusDsModule, UNet3plusDsCgmModule
-from utils import SetEpochCallback, config_from_args
+from utils import SetEpochCallback, config_from_args, VizCallback
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -218,8 +218,6 @@ if __name__ == "__main__":
             log_every_step=cfg.log_every_step,
         )
 
-    logger = []
-    logger.append(CSVLogger("./logs/", name=cfg.exp_name, flush_logs_every_n_steps=1))
     checkpoint_callback = ModelCheckpoint(
         dirpath=f"{cfg.ckpt_root}/{cfg.exp_name}",
         save_top_k=1,
@@ -232,6 +230,7 @@ if __name__ == "__main__":
         checkpoint_callback,
     ]
 
+    logger = []
     if cfg.do_wandb:
         wandb.init(
             name=cfg.exp_name,
@@ -241,6 +240,8 @@ if __name__ == "__main__":
         )
         wandb_logger = WandbLogger()
         logger.append(wandb_logger)
+        callbacks.append(VizCallback(cfg.context_size))
+    logger.append(CSVLogger("./logs/", name=cfg.exp_name, flush_logs_every_n_steps=1))
 
     trainer = pl.Trainer(
         accelerator="gpu" if str(cfg.device).startswith("cuda") else "cpu",

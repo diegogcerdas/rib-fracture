@@ -155,11 +155,12 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         )
 
     def training_step(self, batch, batch_idx):
-        loss = self.compute_loss(batch, "train")
+        loss, _ = self.compute_loss(batch, "train")
         return loss
 
     def validation_step(self, batch, batch_idx):
-        self.compute_loss(batch, "val")
+        _, pred = self.compute_loss(batch, "val")
+        return pred
 
     def test_step(self, batch, batch_idx):
         self.update_pred_masks(batch)
@@ -179,7 +180,7 @@ class UNet3plusModule(BaseUnetModule):
         y_hat = self(x)
         loss = self.loss(y_hat, y)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
-        return loss
+        return loss, y_hat
 
     def predict_mask(self, x):
         y_hat = self(x)
@@ -216,7 +217,7 @@ class UNet3plusDsModule(BaseUnetModule):
         self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
         self.log_stat(f"{mode}_segmentation_loss", loss)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
-        return loss
+        return loss, d1_hat
 
     def predict_mask(self, x):
         d1_hat, _, _, _, _ = self(x)
@@ -261,7 +262,7 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         self.log_stat(f"{mode}_segmentation_loss", loss_seg)
         self.log_stat(f"{mode}_classification_loss", loss_cls)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
-        return loss
+        return loss, d1_hat
 
     def predict_mask(self, x):
         d1_hat, _, _, _, _, cls_hat = self(x)
