@@ -199,9 +199,14 @@ class UNet3plusDsModule(BaseUnetModule):
         loss = 0
         # TODO tmp: direct supervision on each level
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
-            loss_d = self.loss(d_hat, y)
+            loss_d_focal, loss_d_iou, loss_d_msssim = self.loss(d_hat, y)
+            loss_d = loss_d_focal +  loss_d_iou +  loss_d_msssim
             loss += loss_d
+            self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
+            self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
+            self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
             self.log_stat(f"{mode}_hybrid_loss_d{i+1}", loss_d)
+        self.log_stat(f"{mode}_segmentation_loss", loss)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
         return loss
 
@@ -224,9 +229,13 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         loss_seg = 0
         # TODO tmp: direct supervision on each level
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
-            loss_d = self.seg_loss(d_hat, y)
+            loss_d_focal, loss_d_iou, loss_d_msssim = self.seg_loss(d_hat, y)
+            loss_d = loss_d_focal +  loss_d_iou +  loss_d_msssim
             loss_seg += loss_d
-            self.log_stat(f"{mode}_segmentation_loss_d{i+1}", loss_d)
+            self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
+            self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
+            self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
+            self.log_stat(f"{mode}_hybrid_loss_d{i+1}", loss_d)
 
         cls_true = (y.sum(dim=(1, 2, 3)) > 0).long()  # cls=0/1
         cls_true = F.one_hot(cls_true, num_classes=cls_hat.shape[1]).float()  # one-hot encoded, same shape as cls_hat
