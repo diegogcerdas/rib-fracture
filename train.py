@@ -11,7 +11,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger, CSVLogger
 
 from dataset import RibFracDataset
-from model import UNet3plusModule, UNet3plusDsModule, UNet3plusDsCgmModule
+from model import UNet3plusModule, UNet3plusDsModule, UNet3plusDsCgmModule, UNet3Module
 from utils import SetEpochCallback, config_from_args
 
 if __name__ == "__main__":
@@ -101,7 +101,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use-model",
         type=str,
-        choices=["unet3plus", "unet3plus-ds", "unet3plus-ds-cgm"],
+        choices=["unet3plus", "unet3plus-ds", "unet3plus-ds-cgm", "unet"],
         default='unet3plus',
         help="Unet3plus model to be used. valid options: unet3plus, unet3plus-ds, unet3plus-ds-cgm",
     )
@@ -204,6 +204,8 @@ if __name__ == "__main__":
         model_module = UNet3plusDsModule
     elif cfg.use_model == "unet3plus-ds-cgm":
         model_module = UNet3plusDsCgmModule
+    elif cfg.use_model == "unet":
+        model_module = UNet3Module
 
     if cfg.resume_ckpt is not None:
         print(f"Resuming from checkpoint {cfg.resume_ckpt}")
