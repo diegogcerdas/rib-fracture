@@ -196,16 +196,24 @@ class UNet3plusDsModule(BaseUnetModule):
     def compute_loss(self, batch, mode):
         x, y = batch
         d1_hat, d2_hat, d3_hat, d4_hat, d5_hat = self(x)
-        loss = 0
+        loss_seg_focal = 0
+        loss_seg_iou = 0
+        loss_seg_msssim = 0
         # TODO tmp: direct supervision on each level
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
-            loss_d_focal, loss_d_iou, loss_d_msssim = self.loss(d_hat, y)
+            loss_d_focal, loss_d_iou, loss_d_msssim = self.seg_loss(d_hat, y)
+            loss_seg_focal = loss_seg_focal + loss_d_focal
+            loss_seg_iou = loss_seg_iou + loss_d_iou
+            loss_seg_msssim = loss_seg_msssim + loss_d_msssim
             loss_d = loss_d_focal +  loss_d_iou +  loss_d_msssim
-            loss += loss_d
             self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
             self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
             self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
             self.log_stat(f"{mode}_hybrid_loss_d{i+1}", loss_d)
+        loss = loss_seg_focal + loss_seg_iou + loss_seg_msssim
+        self.log_stat(f"{mode}_focal_loss", loss_seg_focal)
+        self.log_stat(f"{mode}_iou_loss", loss_seg_iou)
+        self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
         self.log_stat(f"{mode}_segmentation_loss", loss)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
         return loss
@@ -226,12 +234,16 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         x, y = batch
         d1_hat, d2_hat, d3_hat, d4_hat, d5_hat, cls_hat = self(x)
 
-        loss_seg = 0
+        loss_seg_focal = 0
+        loss_seg_iou = 0
+        loss_seg_msssim = 0
         # TODO tmp: direct supervision on each level
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
             loss_d_focal, loss_d_iou, loss_d_msssim = self.seg_loss(d_hat, y)
+            loss_seg_focal = loss_seg_focal + loss_d_focal
+            loss_seg_iou = loss_seg_iou + loss_d_iou
+            loss_seg_msssim = loss_seg_msssim + loss_d_msssim
             loss_d = loss_d_focal +  loss_d_iou +  loss_d_msssim
-            loss_seg += loss_d
             self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
             self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
             self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
@@ -241,7 +253,11 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         cls_true = F.one_hot(cls_true, num_classes=cls_hat.shape[1]).float()  # one-hot encoded, same shape as cls_hat
         loss_cls = self.bce_loss(cls_hat, cls_true)
 
+        loss_seg = loss_seg_focal + loss_seg_iou + loss_seg_msssim
         loss = loss_seg + loss_cls  # TODO lambda weight
+        self.log_stat(f"{mode}_focal_loss", loss_seg_focal)
+        self.log_stat(f"{mode}_iou_loss", loss_seg_iou)
+        self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
         self.log_stat(f"{mode}_segmentation_loss", loss_seg)
         self.log_stat(f"{mode}_classification_loss", loss_cls)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
