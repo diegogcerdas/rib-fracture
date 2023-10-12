@@ -50,7 +50,7 @@ class RibFracDataset(Dataset):
             self.df = self.create_data_info_csv()
 
         # Clean the DataFrame and prepare for sampling
-        if partition == "train":
+        if partition == "train" or partition == "val":
             self.drop_slices_without_context()
             self.repeat_slices_with_fracture()
             self.add_df_index()
@@ -80,7 +80,7 @@ class RibFracDataset(Dataset):
 
     def __getitem__(self, idx):
         # If training, create a random patch from the image and mask slices
-        if self.partition == "train":
+        if self.partition == "train" or self.partition == 'val':
             row = self.df.iloc[idx]
             # Load image and mask slices
             filename = os.path.join(self.root_dir, row["img_filename"])
@@ -385,7 +385,7 @@ class RibFracDataset(Dataset):
         print("Done!")
         return df
 
-    def get_train_sampler(self, seed):
+    def get_balanced_sampler(self, seed):
         return BalancedFractureSampler(self.df, seed)
 
     def get_test_sampler(self):

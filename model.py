@@ -143,26 +143,30 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
                 f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice_scores[threshold], on_step=False
             )
 
-    def log_stat(self, name, stat, on_step=True):
+    def log_stat(self, name, stat, on_step=True, prog_bar=False):
         on_step = on_step and self.log_every_step
         self.log(
             name,
             stat,
             on_step=on_step,
             on_epoch=True,
-            prog_bar=True,
+            prog_bar=prog_bar,
             logger=True,
         )
 
     def training_step(self, batch, batch_idx):
-        loss = self.compute_loss(batch, "train")
+        loss, _ = self.compute_loss(batch, "train")
         return loss
 
     def validation_step(self, batch, batch_idx):
+        _, pred = self.compute_loss(batch, "val")
+        return pred
+
+    def test_step(self, batch, batch_idx):
         self.update_pred_masks(batch)
 
-    def on_validation_epoch_end(self) -> None:
-        self.compute_eval("val")
+    def on_test_epoch_end(self) -> None:
+        self.compute_eval("test")
 
 
 class UNetModule(BaseUnetModule):
@@ -266,8 +270,8 @@ class UNet3plusModule(BaseUnetModule):
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        self.log_stat(f"{mode}_bce_loss", loss)
-        return loss
+        self.log_stat(f"{mode}_loss", loss, prog_bar=True)
+        return loss, y_hat
 
     def predict_mask(self, x):
         y_hat = self(x)
@@ -284,14 +288,27 @@ class UNet3plusDsModule(BaseUnetModule):
     def compute_loss(self, batch, mode):
         x, y = batch
         d1_hat, d2_hat, d3_hat, d4_hat, d5_hat = self(x)
-        loss = 0
+        loss_seg_focal = 0
+        loss_seg_iou = 0
+        loss_seg_msssim = 0
         # TODO tmp: direct supervision on each level
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
-            loss_d = self.loss(d_hat, y)
-            loss += loss_d
+            loss_d_focal, loss_d_iou, loss_d_msssim = self.seg_loss(d_hat, y)
+            loss_seg_focal = loss_seg_focal + loss_d_focal
+            loss_seg_iou = loss_seg_iou + loss_d_iou
+            loss_seg_msssim = loss_seg_msssim + loss_d_msssim
+            loss_d = loss_d_focal +  loss_d_iou +  loss_d_msssim
+            self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
+            self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
+            self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
             self.log_stat(f"{mode}_hybrid_loss_d{i+1}", loss_d)
-        self.log_stat(f"{mode}_hybrid_loss", loss)
-        return loss
+        loss = loss_seg_focal + loss_seg_iou + loss_seg_msssim
+        self.log_stat(f"{mode}_focal_loss", loss_seg_focal)
+        self.log_stat(f"{mode}_iou_loss", loss_seg_iou)
+        self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
+        self.log_stat(f"{mode}_segmentation_loss", loss)
+        self.log_stat(f"{mode}_loss", loss, prog_bar=True)
+        return loss, d1_hat
 
     def predict_mask(self, x):
         d1_hat, _, _, _, _ = self(x)
@@ -309,22 +326,34 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         x, y = batch
         d1_hat, d2_hat, d3_hat, d4_hat, d5_hat, cls_hat = self(x)
 
-        loss_seg = 0
+        loss_seg_focal = 0
+        loss_seg_iou = 0
+        loss_seg_msssim = 0
         # TODO tmp: direct supervision on each level
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
-            loss_d = self.seg_loss(d_hat, y)
-            loss_seg += loss_d
-            self.log_stat(f"{mode}_segmentation_loss_d{i+1}", loss_d)
+            loss_d_focal, loss_d_iou, loss_d_msssim = self.seg_loss(d_hat, y)
+            loss_seg_focal = loss_seg_focal + loss_d_focal
+            loss_seg_iou = loss_seg_iou + loss_d_iou
+            loss_seg_msssim = loss_seg_msssim + loss_d_msssim
+            loss_d = loss_d_focal +  loss_d_iou +  loss_d_msssim
+            self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
+            self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
+            self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
+            self.log_stat(f"{mode}_hybrid_loss_d{i+1}", loss_d)
 
         cls_true = (y.sum(dim=(1, 2, 3)) > 0).long()  # cls=0/1
         cls_true = F.one_hot(cls_true, num_classes=cls_hat.shape[1]).float()  # one-hot encoded, same shape as cls_hat
         loss_cls = self.bce_loss(cls_hat, cls_true)
 
+        loss_seg = loss_seg_focal + loss_seg_iou + loss_seg_msssim
         loss = loss_seg + loss_cls  # TODO lambda weight
+        self.log_stat(f"{mode}_focal_loss", loss_seg_focal)
+        self.log_stat(f"{mode}_iou_loss", loss_seg_iou)
+        self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
         self.log_stat(f"{mode}_segmentation_loss", loss_seg)
         self.log_stat(f"{mode}_classification_loss", loss_cls)
-        self.log_stat(f"{mode}_loss", loss)
-        return loss
+        self.log_stat(f"{mode}_loss", loss, prog_bar=True)
+        return loss, d1_hat
 
     def predict_mask(self, x):
         d1_hat, _, _, _, _, cls_hat = self(x)

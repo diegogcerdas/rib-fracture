@@ -5,8 +5,8 @@ import torch
 
 
 def _focal(y_true, y_pred, size_average=True, gamma=2., alpha=4., epsilon=1.e-9):
-    y_true_c = torch.FloatTensor(y_true)
-    y_pred_c = torch.FloatTensor(y_pred)
+    y_true_c = y_true.float()
+    y_pred_c = y_pred.float()
 
     model_out = y_pred_c + epsilon
     ce = - y_true_c * torch.log(model_out)

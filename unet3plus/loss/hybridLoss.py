@@ -12,4 +12,4 @@ class HybridLoss(nn.Module):
         self.msssim_loss = MSSSIMloss(size_average=size_average)
 
     def forward(self, pred, target):
-        return self.focal_loss(pred, target) + self.iou_loss(pred, target) + self.msssim_loss(pred, target)
+        return self.focal_loss(pred, target), self.iou_loss(pred, target), self.msssim_loss(pred, target)
