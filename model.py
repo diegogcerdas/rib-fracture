@@ -242,6 +242,5 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         d1_hat, _, _, _, _, cls_hat = self(x)
         # cls is a tensor (B,2) with binary class probs
         cls = torch.argmax(cls_hat, dim=1)
-
         y_hat = d1_hat * cls  # TODO test ok
         return y_hat
