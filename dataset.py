@@ -27,7 +27,8 @@ class RibFracDataset(Dataset):
             data_std: float,
             test_stride: int,
             force_data_info: bool = False,
-            debug: bool = False
+            debug: bool = False,
+            positional_encoding: bool = False,
     ):
         super().__init__()
         assert partition in ["train", "val", "test"]
@@ -41,6 +42,9 @@ class RibFracDataset(Dataset):
         self.clip_max_val = clip_max_val
         self.test_stride = test_stride
         self.debug = debug
+        self.positional_encoding = positional_encoding
+        self.data_mean = data_mean
+        self.data_std = data_std
 
         # Compute a DataFrame of all available slices
         self.data_info_path = os.path.join(root_dir, f"{partition}_data_info.csv")
@@ -84,7 +88,8 @@ class RibFracDataset(Dataset):
             row = self.df.iloc[idx]
             # Load image and mask slices
             filename = os.path.join(self.root_dir, row["img_filename"])
-            img = self.load_img(filename, row["slice_idx"])
+            # relative z only used if positional encoding
+            img, relative_z = self.load_img(filename, row["slice_idx"])
             mask = self.load_mask(filename.replace("image", "label"), row["slice_idx"])
             is_fracture_slice = row["is_fracture_slice"]
             # Pad mask to allow for patches on the edge
@@ -99,6 +104,19 @@ class RibFracDataset(Dataset):
             # Split image patch and mask patch
             img_patch, mask_patch = patch[:-1], patch[-1:]
 
+            if self.positional_encoding:
+                relative_x = round(random_coord[0] / img.shape[-1], 4)
+                relative_y = round(random_coord[1] / img.shape[-1], 4)
+                relative_z = round(relative_z, 4)
+                
+                encoding_sin = self.create_sinusoidal_encoding(relative_x, relative_y, 
+                                                            relative_z, img_patch.shape[-2:])
+                # imp patch: BATCH, CHANNEL, HEIGHT, WIDTH; where CHANNEL = 1 + 2 x context_size
+                # appending encoding to the image patch
+                img_patch_enc = torch.cat([img_patch, encoding_sin], dim=0)
+
+                return img_patch_enc, mask_patch
+            
             if self.debug:
                 return (
                     img_patch,
@@ -128,7 +146,10 @@ class RibFracDataset(Dataset):
             coord = (ix, iy)
             # Load image slice
             filename = os.path.join(self.root_dir, row["img_filename"])
-            img = self.load_img(filename, row["slice_idx"])
+
+            # relative z only used if positional encoding      
+            img, relative_z = self.load_img(filename, row["slice_idx"])
+      
             # Create patch
             img_patch = crop_patch(img, coord, self.patch_original_size)
             # Normalize and transform image patch
@@ -154,6 +175,19 @@ class RibFracDataset(Dataset):
                     img,
                 )
 
+            if self.positional_encoding:
+                relative_x = round(ix  / img.shape[-1], 4)
+                relative_y = round(iy / img.shape[-1], 4)
+                relative_z = round(relative_z, 4)
+                
+                encoding_sin = self.create_sinusoidal_encoding(relative_x, relative_y, 
+                                                            relative_z, img_patch.shape[-2:])
+                # imp patch: BATCH, CHANNEL, HEIGHT, WIDTH; where CHANNEL = 1 + 2 x context_size
+                # appending encoding to the image patch
+                img_patch_enc = torch.cat([img_patch, encoding_sin], dim=0)
+
+                return img_patch_enc, coord, npy_filename, row["slice_idx"], self.patch_original_size
+        
             return (
                 img_patch,
                 coord,
@@ -165,6 +199,8 @@ class RibFracDataset(Dataset):
     def load_img(self, img_filename, slice_idx):
         # Load whole image slice
         proxy_img = nib.load(img_filename)
+        relative_z = slice_idx / proxy_img.shape[-1]
+
         img = torch.from_numpy(
             proxy_img.dataobj[
             ...,
@@ -174,7 +210,9 @@ class RibFracDataset(Dataset):
             .T
         ).float()
         img = self.preprocess(img)
-        return img
+        
+        return img, relative_z 
+ 
 
     def load_mask(self, mask_filename, slice_idx):
         # Load whole mask slice
@@ -186,6 +224,33 @@ class RibFracDataset(Dataset):
         )
         return mask
 
+    def create_sinusoidal_encoding(self, x, y, z, image_shape, scale=10.0):
+        """
+        Create a sinusoidal encoding for 3D coordinates and project it into a 2D image.
+
+        Args:
+        - x, y, z: 3D coordinates of the sinusoidal signal.
+        - image_shape: The shape of the 2D image you want to create.
+        - scale: A scaling factor to control the frequency of the sinusoidal signal.
+
+        Returns:
+        - 2D NumPy array representing the sinusoidal encoding.
+        """
+        # Generate a grid of coordinates for the 2D image
+        xx, yy = np.meshgrid(np.linspace(0, 1, image_shape[1]), np.linspace(0, 1, image_shape[0]))
+        
+        # Calculate the encoding values using sine and cosine functions
+        encoding = np.sin(scale * np.pi * (x * xx + y * yy)) + np.cos(scale * np.pi * (x * xx + y * yy)) + z
+
+        # Normalize the encoding to the range [0, 1]
+        encoding = (encoding - encoding.min()) / (encoding.max() - encoding.min())
+
+        normalize = transforms.Normalize(mean=[self.data_mean], std=[self.data_std])
+
+        encoding_tensor = normalize(torch.from_numpy(encoding).float().unsqueeze(0))
+
+        return encoding_tensor
+    
     def preprocess(self, img):
         """Preprocess image slice."""
 

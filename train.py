@@ -112,6 +112,14 @@ if __name__ == "__main__":
         help="Number of slices above and below the middle slice.",
     )
 
+    parser.add_argument(
+        "--positional-encoding",
+        type=bool,
+        default=False,
+        help="Using positional encoding or not",
+    )
+
+
     # Training Parameters
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
@@ -164,6 +172,7 @@ if __name__ == "__main__":
         data_std=cfg.data_std,
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
+        positional_encoding=cfg.positional_encoding,
     )
     train_sampler = train_set.get_balanced_sampler(seed=cfg.seed)
     train_loader = data.DataLoader(
@@ -189,6 +198,7 @@ if __name__ == "__main__":
         data_std=cfg.data_std,
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
+        positional_encoding=cfg.positional_encoding,
     )
     val_sampler = val_set.get_balanced_sampler(seed=cfg.seed)
     val_loader = data.DataLoader(
@@ -212,8 +222,9 @@ if __name__ == "__main__":
         print(f"Resuming from checkpoint {cfg.resume_ckpt}")
         model = model_module.load_from_checkpoint(cfg.resume_ckpt)
     else:
+        num_channels = 1 + 2 * cfg.context_size
         model = model_module(
-            n_channels=1 + 2 * cfg.context_size,
+            n_channels=(num_channels+1) if cfg.positional_encoding else num_channels, 
             learning_rate=cfg.learning_rate,
             weight_decay=cfg.weight_decay,
             cutoff_height=cfg.cutoff_height,
