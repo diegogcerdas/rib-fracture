@@ -113,8 +113,8 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--positional-encoding",
-        type=bool,
+        "--use-positional-encoding",
+        action=BooleanOptionalAction,
         default=False,
         help="Using positional encoding or not",
     )
@@ -172,7 +172,7 @@ if __name__ == "__main__":
         data_std=cfg.data_std,
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
-        positional_encoding=cfg.positional_encoding,
+        use_positional_encoding=cfg.use_positional_encoding,
     )
     train_sampler = train_set.get_balanced_sampler(seed=cfg.seed)
     train_loader = data.DataLoader(
@@ -198,7 +198,7 @@ if __name__ == "__main__":
         data_std=cfg.data_std,
         test_stride=cfg.test_stride,
         force_data_info=cfg.force_data_info,
-        positional_encoding=cfg.positional_encoding,
+        use_positional_encoding=cfg.use_positional_encoding,
     )
     val_sampler = val_set.get_balanced_sampler(seed=cfg.seed)
     val_loader = data.DataLoader(
@@ -224,7 +224,7 @@ if __name__ == "__main__":
     else:
         num_channels = 1 + 2 * cfg.context_size
         model = model_module(
-            n_channels=(num_channels+1) if cfg.positional_encoding else num_channels, 
+            n_channels=(num_channels+1) if cfg.use_positional_encoding else num_channels, 
             learning_rate=cfg.learning_rate,
             weight_decay=cfg.weight_decay,
             cutoff_height=cfg.cutoff_height,

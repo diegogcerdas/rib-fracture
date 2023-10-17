@@ -1,0 +1,26 @@
+#!/bin/bash
+
+#SBATCH --partition=gpu
+#SBATCH --gpus-per-node=1
+#SBATCH --job-name=rf_exp2
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=18
+#SBATCH --time=10:00:00
+#SBATCH --mem=120000M
+#SBATCH --output=slurm_output_%A.out
+
+module purge
+module load 2022
+module load Anaconda3/2022.05
+
+source activate rib
+
+#DATA_ROOT=/scratch-shared/$USER/data/
+DATA_ROOT=$HOME/rib-fracture/data/example/
+
+
+
+cd ~/rib-fracture
+
+#python train.py --exp-name debug_posenc --use-positional-encoding --use-model unet3plus-ds-cgm --context-size 0 --do-wandb --wandb-key $WANDB_KEY --wandb-entity $WANDB_USER --data-root $DATA_ROOT --download-data  --max-epochs 10 --batch-size-train 32 --batch-size-test 32 --patch-final-size 128
+python train.py --exp-name debug_posenc --use-positional-encoding --use-model unet3plus-ds-cgm --context-size 0 --do-wandb --wandb-key $WANDB_KEY --wandb-entity $WANDB_USER --data-root $DATA_ROOT  --max-epochs 2 --batch-size-train 1 --batch-size-test 1 --patch-final-size 128

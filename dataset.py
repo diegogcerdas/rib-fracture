@@ -28,7 +28,7 @@ class RibFracDataset(Dataset):
             test_stride: int,
             force_data_info: bool = False,
             debug: bool = False,
-            positional_encoding: bool = False,
+            use_positional_encoding: bool = False,
     ):
         super().__init__()
         assert partition in ["train", "val", "test"]
@@ -43,7 +43,7 @@ class RibFracDataset(Dataset):
         self.clip_max_val = clip_max_val
         self.test_stride = test_stride
         self.debug = debug
-        self.positional_encoding = positional_encoding
+        self.use_positional_encoding = use_positional_encoding
         self.data_mean = data_mean
         self.data_std = data_std
 
@@ -105,7 +105,7 @@ class RibFracDataset(Dataset):
             # Split image patch and mask patch
             img_patch, mask_patch = patch[:-1], patch[-1:]
 
-            if self.positional_encoding:
+            if self.use_positional_encoding:
                 x, y = random_coord
                 z_btm, z_top = z, size_z - z
                 z_rel = z / size_z

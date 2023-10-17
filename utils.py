@@ -27,7 +27,7 @@ class ConfigTrain:
     download_data: bool
     use_model: str
     context_size: int
-    positional_encoding: bool
+    use_positional_encoding: bool
     seed: int
     learning_rate: float
     weight_decay: float
