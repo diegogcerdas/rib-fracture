@@ -107,21 +107,22 @@ class RibFracDataset(Dataset):
 
             if self.use_positional_encoding:
                 x, y = random_coord
-                z_btm, z_top = z, size_z - z
                 z_rel = z / size_z
-                z_rel = int(z_rel * 1e3)
+                z = int(z_rel * 512)
                 
                 enc_x = positional_encoding_2d(x, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
                 enc_y = positional_encoding_2d(y, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
-                enc_z_btm = positional_encoding_2d(z_top, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
-                enc_z_top = positional_encoding_2d(z_btm, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
-                enc_z_rel = positional_encoding_2d(z_rel, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
+                enc_z = positional_encoding_2d(z, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
 
                 # encodings are shape (HEIGHT, WIDTH)
-                # img_patch is shape (CHANNEL, HEIGHT, WIDTH)  TODO: check this shape and channels index
-                # TODO check unsqueeze not necessary
+                # img_patch is shape (CHANNEL, HEIGHT, WIDTH)
+                
+                enc_x = enc_x.unsqueeze(0)
+                enc_y = enc_y.unsqueeze(0)
+                enc_z = enc_z.unsqueeze(0)
+
                 # append encodings in the channel dimension
-                img_patch_enc = torch.cat([img_patch, enc_x, enc_y, enc_z_btm, enc_z_top, enc_z_rel], dim=0)
+                img_patch_enc = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
 
                 return img_patch_enc, mask_patch
             

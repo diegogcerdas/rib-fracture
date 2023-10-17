@@ -223,8 +223,9 @@ if __name__ == "__main__":
         model = model_module.load_from_checkpoint(cfg.resume_ckpt)
     else:
         num_channels = 1 + 2 * cfg.context_size
+        num_channels += 3 if cfg.use_positional_encoding else 0
         model = model_module(
-            n_channels=(num_channels+1) if cfg.use_positional_encoding else num_channels, 
+            n_channels= num_channels, 
             learning_rate=cfg.learning_rate,
             weight_decay=cfg.weight_decay,
             cutoff_height=cfg.cutoff_height,
