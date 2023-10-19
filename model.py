@@ -367,7 +367,7 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         loss_seg_iou = 0
         loss_seg_msssim = 0
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
-            loss_d_focal, loss_d_iou, loss_d_msssim = self.loss(d_hat, y)
+            loss_d_focal, loss_d_iou, loss_d_msssim = self.seg_loss(d_hat, y)
             loss_seg_iou = loss_seg_iou + loss_d_iou
             self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
             if self.use_focal_loss:
