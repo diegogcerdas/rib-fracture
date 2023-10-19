@@ -27,7 +27,8 @@ class RibFracDataset(Dataset):
             data_std: float,
             test_stride: int,
             force_data_info: bool = False,
-            debug: bool = False
+            debug: bool = False,
+            use_positional_encoding: bool = False,
     ):
         super().__init__()
         assert partition in ["train", "val", "test"]
@@ -35,12 +36,16 @@ class RibFracDataset(Dataset):
         self.partition = partition
         self.context_size = context_size
         self.patch_original_size = patch_original_size
+        self.patch_final_size = patch_final_size
         self.proportion_fracture_in_patch = proportion_fracture_in_patch
         self.cutoff_height = cutoff_height
         self.clip_min_val = clip_min_val
         self.clip_max_val = clip_max_val
         self.test_stride = test_stride
         self.debug = debug
+        self.use_positional_encoding = use_positional_encoding
+        self.data_mean = data_mean
+        self.data_std = data_std
 
         # Compute a DataFrame of all available slices
         self.data_info_path = os.path.join(root_dir, f"{partition}_data_info.csv")
@@ -84,7 +89,8 @@ class RibFracDataset(Dataset):
             row = self.df.iloc[idx]
             # Load image and mask slices
             filename = os.path.join(self.root_dir, row["img_filename"])
-            img = self.load_img(filename, row["slice_idx"])
+            # relative z only used if positional encoding
+            img, z, size_z = self.load_img(filename, row["slice_idx"])
             mask = self.load_mask(filename.replace("image", "label"), row["slice_idx"])
             is_fracture_slice = row["is_fracture_slice"]
             # Pad mask to allow for patches on the edge
@@ -95,10 +101,31 @@ class RibFracDataset(Dataset):
                 img, mask, is_fracture_slice
             )
             # Transform image patch and mask patch together
-            patch = self.transform(torch.cat([img_patch, mask_patch], dim=0))
+            patch = self.transform(torch.cat([img_patch, mask_patch], dim=0))  # now they are 256x256
             # Split image patch and mask patch
             img_patch, mask_patch = patch[:-1], patch[-1:]
 
+            if self.use_positional_encoding:
+                x, y = random_coord
+                z_rel = z / size_z
+                z = int(z_rel * 512)
+                
+                enc_x = positional_encoding_2d(x, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
+                enc_y = positional_encoding_2d(y, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
+                enc_z = positional_encoding_2d(z, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
+
+                # encodings are shape (HEIGHT, WIDTH)
+                # img_patch is shape (CHANNEL, HEIGHT, WIDTH)
+                
+                enc_x = enc_x.unsqueeze(0)
+                enc_y = enc_y.unsqueeze(0)
+                enc_z = enc_z.unsqueeze(0)
+
+                # append encodings in the channel dimension
+                img_patch_enc = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
+
+                return img_patch_enc, mask_patch
+            
             if self.debug:
                 return (
                     img_patch,
@@ -128,7 +155,10 @@ class RibFracDataset(Dataset):
             coord = (ix, iy)
             # Load image slice
             filename = os.path.join(self.root_dir, row["img_filename"])
-            img = self.load_img(filename, row["slice_idx"])
+
+            # relative z only used if positional encoding      
+            img, relative_z = self.load_img(filename, row["slice_idx"])
+      
             # Create patch
             img_patch = crop_patch(img, coord, self.patch_original_size)
             # Normalize and transform image patch
@@ -154,6 +184,19 @@ class RibFracDataset(Dataset):
                     img,
                 )
 
+            if self.positional_encoding:
+                relative_x = round(ix  / img.shape[-1], 4)
+                relative_y = round(iy / img.shape[-1], 4)
+                relative_z = round(relative_z, 4)
+                
+                encoding_sin = self.create_sinusoidal_encoding(relative_x, relative_y, 
+                                                            relative_z, img_patch.shape[-2:])
+                # imp patch: BATCH, CHANNEL, HEIGHT, WIDTH; where CHANNEL = 1 + 2 x context_size
+                # appending encoding to the image patch
+                img_patch_enc = torch.cat([img_patch, encoding_sin], dim=0)
+
+                return img_patch_enc, coord, npy_filename, row["slice_idx"], self.patch_original_size
+        
             return (
                 img_patch,
                 coord,
@@ -165,6 +208,9 @@ class RibFracDataset(Dataset):
     def load_img(self, img_filename, slice_idx):
         # Load whole image slice
         proxy_img = nib.load(img_filename)
+        z = slice_idx
+        size_z = proxy_img.shape[-1]
+
         img = torch.from_numpy(
             proxy_img.dataobj[
             ...,
@@ -174,7 +220,8 @@ class RibFracDataset(Dataset):
             .T
         ).float()
         img = self.preprocess(img)
-        return img
+        
+        return img, z, size_z
 
     def load_mask(self, mask_filename, slice_idx):
         # Load whole mask slice
@@ -185,7 +232,7 @@ class RibFracDataset(Dataset):
             .unsqueeze(0)
         )
         return mask
-
+    
     def preprocess(self, img):
         """Preprocess image slice."""
 
@@ -461,3 +508,21 @@ def crop_patch(image, center_coord, patch_size):
             center_coord[1] - patch_size // 2: center_coord[1] + patch_size // 2,
             ]
     return patch
+
+
+def positional_encoding(i, out_dim, device='cpu'):
+    div_term = torch.exp(-np.log(10000.0) * (2 * torch.arange(out_dim // 2, device=device) // 2) / out_dim)
+    pe = torch.zeros(out_dim, device=device)
+    pe[0::2] = torch.sin(i * div_term)
+    pe[1::2] = torch.cos(i * div_term)
+    return pe
+
+
+def positional_encoding_2d(i, out_dims, axis=0, device='cpu'):
+    assert axis in [0, 1], "axis must be 0 or 1"
+    posenc = positional_encoding(i, out_dims[axis], device=device)
+    if axis == 0:
+        posenc = posenc.unsqueeze(1).repeat(1, out_dims[1])
+    else:
+        posenc = posenc.unsqueeze(0).repeat(out_dims[0], 1)
+    return posenc
