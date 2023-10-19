@@ -25,6 +25,8 @@ class ConfigTrain:
     test_stride: int
     force_data_info: bool
     download_data: bool
+    use_focal_loss: bool
+    use_msssim_loss: bool
     use_model: str
     context_size: int
     use_positional_encoding: bool

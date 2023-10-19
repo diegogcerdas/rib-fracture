@@ -26,6 +26,8 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         weight_decay: float,
         cutoff_height: int,
         data_root: str,
+        use_focal_loss: bool = True,
+        use_msssim_loss: bool = True,
         log_every_step: bool = False,
     ):
         super(BaseUnetModule, self).__init__()
@@ -34,6 +36,8 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.data_root = data_root
+        self.use_focal_loss = use_focal_loss
+        self.use_msssim_loss = use_msssim_loss
         self.cutoff_height = cutoff_height
         self.log_every_step = log_every_step
 
@@ -313,27 +317,30 @@ class UNet3plusDsModule(BaseUnetModule):
         loss_seg_focal = 0
         loss_seg_iou = 0
         loss_seg_msssim = 0
-        # TODO tmp: direct supervision on each level
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
             loss_d_focal, loss_d_iou, loss_d_msssim = self.loss(d_hat, y)
-            loss_seg_focal = loss_seg_focal + loss_d_focal
             loss_seg_iou = loss_seg_iou + loss_d_iou
-            loss_seg_msssim = loss_seg_msssim + loss_d_msssim
-            loss_d = loss_d_focal +  loss_d_iou +  loss_d_msssim
-            self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
             self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
-            self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
-            self.log_stat(f"{mode}_hybrid_loss_d{i+1}", loss_d)
-        loss = loss_seg_focal + loss_seg_iou + loss_seg_msssim
+            if self.use_focal_loss:
+                loss_seg_focal = loss_seg_focal + loss_d_focal
+                self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
+            if self.use_msssim_loss:
+                loss_seg_msssim = loss_seg_msssim + loss_d_msssim
+                self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
+        loss = loss_seg_iou
+        self.log_stat(f"{mode}_iou_loss", loss_seg_iou)
+        if self.use_focal_loss:
+            loss = loss + loss_seg_focal
+            self.log_stat(f"{mode}_focal_loss", loss_seg_focal)
+        if self.use_msssim_loss:
+            loss = loss + loss_seg_msssim
+            self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
         with torch.no_grad():
             cls_true = (y.sum(dim=(1, 2, 3)) > 0).long()
             iou_metric = self.iou_metric(d1_hat[cls_true == 1], y[cls_true == 1])
             fpr_metric = self.fpr_metric(d1_hat, y)
         self.log_stat(f"{mode}_iou_metric", iou_metric, prog_bar=True)
         self.log_stat(f"{mode}_fpr_metric", fpr_metric, prog_bar=True)
-        self.log_stat(f"{mode}_focal_loss", loss_seg_focal)
-        self.log_stat(f"{mode}_iou_loss", loss_seg_iou)
-        self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
         self.log_stat(f"{mode}_segmentation_loss", loss)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
         return loss, d1_hat
@@ -359,23 +366,29 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         loss_seg_focal = 0
         loss_seg_iou = 0
         loss_seg_msssim = 0
-        # TODO tmp: direct supervision on each level
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
-            loss_d_focal, loss_d_iou, loss_d_msssim = self.seg_loss(d_hat, y)
-            loss_seg_focal = loss_seg_focal + loss_d_focal
+            loss_d_focal, loss_d_iou, loss_d_msssim = self.loss(d_hat, y)
             loss_seg_iou = loss_seg_iou + loss_d_iou
-            loss_seg_msssim = loss_seg_msssim + loss_d_msssim
-            loss_d = loss_d_focal +  loss_d_iou +  loss_d_msssim
-            self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
             self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
-            self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
-            self.log_stat(f"{mode}_hybrid_loss_d{i+1}", loss_d)
-
+            if self.use_focal_loss:
+                loss_seg_focal = loss_seg_focal + loss_d_focal
+                self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
+            if self.use_msssim_loss:
+                loss_seg_msssim = loss_seg_msssim + loss_d_msssim
+                self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
+        
         cls_true = (y.sum(dim=(1, 2, 3)) > 0).long()  # cls=0/1
         cls_true = F.one_hot(cls_true, num_classes=cls_hat.shape[1]).float()  # one-hot encoded, same shape as cls_hat
         loss_cls = self.bce_loss(cls_hat, cls_true)
 
-        loss_seg = loss_seg_focal + loss_seg_iou + loss_seg_msssim
+        loss_seg = loss_seg_iou
+        self.log_stat(f"{mode}_iou_loss", loss_seg_iou)
+        if self.use_focal_loss:
+            loss_seg = loss_seg + loss_seg_focal
+            self.log_stat(f"{mode}_focal_loss", loss_seg_focal)
+        if self.use_msssim_loss:
+            loss_seg = loss_seg + loss_seg_msssim
+            self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
         loss = loss_seg + loss_cls  # TODO lambda weight
         with torch.no_grad():
             cls_true = (y.sum(dim=(1, 2, 3)) > 0).long()
@@ -383,9 +396,6 @@ class UNet3plusDsCgmModule(BaseUnetModule):
             fpr_metric = self.fpr_metric(d1_hat, y)
         self.log_stat(f"{mode}_iou_metric", iou_metric, prog_bar=True)
         self.log_stat(f"{mode}_fpr_metric", fpr_metric, prog_bar=True)
-        self.log_stat(f"{mode}_focal_loss", loss_seg_focal)
-        self.log_stat(f"{mode}_iou_loss", loss_seg_iou)
-        self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
         self.log_stat(f"{mode}_segmentation_loss", loss_seg)
         self.log_stat(f"{mode}_classification_loss", loss_cls)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
