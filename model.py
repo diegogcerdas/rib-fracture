@@ -11,6 +11,7 @@ from torch import optim, nn
 from tqdm import tqdm
 
 from unet3plus.loss.hybridLoss import HybridLoss
+from unet3plus.loss.iouLoss import IOUmetric
 from unet3plus.models.UNet_3Plus import UNet_3Plus, UNet_3Plus_DeepSup, UNet_3Plus_DeepSup_CGM
 
 
@@ -175,12 +176,15 @@ class UNetModule(BaseUnetModule):
         super().__init__(*args, **kwargs)
         self.network = Unet(n_channels)
         self.loss = F.binary_cross_entropy_with_logits
+        self.metric = IOUmetric()
 
     def compute_loss(self, batch, mode):
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
-        self.log_stat(f"{mode}_bce_loss", loss)
+        metric = self.metric(y_hat, y)
+        self.log_stat(f"{mode}_loss", loss, prog_bar=True)
+        self.log_stat(f"{mode}_iou_metric", metric, prog_bar=True)
         return loss
     
     def predict_mask(self, x):
@@ -266,12 +270,15 @@ class UNet3plusModule(BaseUnetModule):
         super().__init__(*args, **kwargs)
         self.network = UNet_3Plus(n_channels)
         self.loss = F.binary_cross_entropy_with_logits
+        self.metric = IOUmetric()
 
     def compute_loss(self, batch, mode):
         x, y = batch
         y_hat = self(x)
         loss = self.loss(y_hat, y)
+        metric = self.metric(y_hat, y)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
+        self.log_stat(f"{mode}_iou_metric", metric, prog_bar=True)
         return loss, y_hat
 
     def predict_mask(self, x):
@@ -285,6 +292,7 @@ class UNet3plusDsModule(BaseUnetModule):
         super().__init__(*args, **kwargs)
         self.network = UNet_3Plus_DeepSup(n_channels)
         self.loss = HybridLoss()
+        self.metric = IOUmetric()
 
     def compute_loss(self, batch, mode):
         x, y = batch
@@ -304,11 +312,13 @@ class UNet3plusDsModule(BaseUnetModule):
             self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
             self.log_stat(f"{mode}_hybrid_loss_d{i+1}", loss_d)
         loss = loss_seg_focal + loss_seg_iou + loss_seg_msssim
+        metric = self.metric(d1_hat, y)
         self.log_stat(f"{mode}_focal_loss", loss_seg_focal)
         self.log_stat(f"{mode}_iou_loss", loss_seg_iou)
         self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
         self.log_stat(f"{mode}_segmentation_loss", loss)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
+        self.log_stat(f"{mode}_iou_metric", metric, prog_bar=True)
         return loss, d1_hat
 
     def predict_mask(self, x):
@@ -322,6 +332,7 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         self.network = UNet_3Plus_DeepSup_CGM(n_channels)
         self.seg_loss = HybridLoss()
         self.bce_loss = F.binary_cross_entropy_with_logits
+        self.metric = IOUmetric()
 
     def compute_loss(self, batch, mode):
         x, y = batch
@@ -348,12 +359,14 @@ class UNet3plusDsCgmModule(BaseUnetModule):
 
         loss_seg = loss_seg_focal + loss_seg_iou + loss_seg_msssim
         loss = loss_seg + loss_cls  # TODO lambda weight
+        metric = self.metric(d1_hat, y)
         self.log_stat(f"{mode}_focal_loss", loss_seg_focal)
         self.log_stat(f"{mode}_iou_loss", loss_seg_iou)
         self.log_stat(f"{mode}_msssim_loss", loss_seg_msssim)
         self.log_stat(f"{mode}_segmentation_loss", loss_seg)
         self.log_stat(f"{mode}_classification_loss", loss_cls)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
+        self.log_stat(f"{mode}_iou_metric", metric, prog_bar=True)
         return loss, d1_hat
 
     def predict_mask(self, x):
