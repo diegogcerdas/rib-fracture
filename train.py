@@ -224,6 +224,7 @@ if __name__ == "__main__":
     checkpoint_callback = ModelCheckpoint(
         dirpath=f"{cfg.ckpt_root}/{cfg.exp_name}",
         save_top_k=1,
+        save_last=True,
         monitor="val_loss",
         mode="min",
     )
