@@ -194,6 +194,7 @@ class UNetModule(BaseUnetModule):
             fpr_metric = self.fpr_metric(y_hat, y)
         self.log_stat(f"{mode}_iou_metric", iou_metric, prog_bar=True)
         self.log_stat(f"{mode}_fpr_metric", fpr_metric, prog_bar=True)
+        self.log_stat(f"{mode}_metric", (iou_metric + (1 - fpr_metric))/2, prog_bar=True)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
         return loss
 
@@ -222,6 +223,7 @@ class UNet3plusModule(BaseUnetModule):
             fpr_metric = self.fpr_metric(y_hat, y)
         self.log_stat(f"{mode}_iou_metric", iou_metric, prog_bar=True)
         self.log_stat(f"{mode}_fpr_metric", fpr_metric, prog_bar=True)
+        self.log_stat(f"{mode}_metric", (iou_metric + (1 - fpr_metric))/2, prog_bar=True)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
         return loss, y_hat
 
@@ -273,6 +275,7 @@ class UNet3plusDsModule(BaseUnetModule):
             fpr_metric = self.fpr_metric(d1_hat, y)
         self.log_stat(f"{mode}_iou_metric", iou_metric, prog_bar=True)
         self.log_stat(f"{mode}_fpr_metric", fpr_metric, prog_bar=True)
+        self.log_stat(f"{mode}_metric", (iou_metric + (1 - fpr_metric))/2, prog_bar=True)
         self.log_stat(f"{mode}_segmentation_loss", loss)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
         return loss, d1_hat
@@ -334,6 +337,7 @@ class UNet3plusDsCgmModule(BaseUnetModule):
             fpr_metric = self.fpr_metric(d1_hat, y)
         self.log_stat(f"{mode}_iou_metric", iou_metric, prog_bar=True)
         self.log_stat(f"{mode}_fpr_metric", fpr_metric, prog_bar=True)
+        self.log_stat(f"{mode}_metric", (iou_metric + (1 - fpr_metric))/2, prog_bar=True)
         self.log_stat(f"{mode}_segmentation_loss", loss_seg)
         self.log_stat(f"{mode}_classification_loss", loss_cls)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)

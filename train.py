@@ -145,8 +145,8 @@ if __name__ == "__main__":
     # WandB Parameters
     parser.add_argument("--do-wandb", action=BooleanOptionalAction, default=False)
     parser.add_argument("--wandb-key", type=str, default=None)
-    parser.add_argument("--wandb-project", type=str, default="ribfrac_team7")
-    parser.add_argument("--wandb-entity", type=str, default="username")
+    parser.add_argument("--wandb-project", type=str, default="ribfrac_experiments")
+    parser.add_argument("--wandb-entity", type=str, default="ribfrac_team7")
     parser.add_argument("--wandb-mode", type=str, default="online")
     args = parser.parse_args()
     cfg = config_from_args(args, mode="train")
@@ -243,7 +243,7 @@ if __name__ == "__main__":
         dirpath=f"{cfg.ckpt_root}/{cfg.exp_name}",
         save_top_k=1,
         save_last=True,
-        monitor="val_loss",
+        monitor="val_metric",
         mode="min",
     )
     os.makedirs(f"{cfg.ckpt_root}/{cfg.exp_name}", exist_ok=True)

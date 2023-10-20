@@ -2,7 +2,7 @@
 
 #SBATCH --partition=gpu
 #SBATCH --gpus-per-node=1
-#SBATCH --job-name=rf_exp10
+#SBATCH --job-name=rf_expf02
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
 #SBATCH --time=10:00:00
@@ -18,8 +18,7 @@ source activate rib
 DATA_ROOT=/scratch-shared/$USER/data/
 
 WANDB_KEY=
-WANDB_USER=
 
 cd ~/rib-fracture
 
-python train.py --exp-name exp10 --use-model unet3plus-ds-cgm --context-size 8 --use-positional-encoding --do-wandb --wandb-key $WANDB_KEY --wandb-entity $WANDB_USER --data-root $DATA_ROOT --download-data --max-epochs 10 --batch-size-train 32 --batch-size-test 32 --patch-final-size 128
+python train.py --exp-name expf02 --use-model unet3plus-ds --context-size 8 --use-msssim-loss --do-wandb --wandb-key $WANDB_KEY --data-root $DATA_ROOT --download-data  --max-epochs 3 --batch-size-train 32 --batch-size-test 32 --patch-final-size 128
