@@ -1,12 +1,11 @@
 import dataclasses
 from dataclasses import dataclass
 
+import matplotlib.pyplot as plt
+import numpy as np
 import pytorch_lightning as pl
 
 from dataset import BalancedFractureSampler
-
-import numpy as np
-import matplotlib.pyplot as plt
 
 
 @dataclass
@@ -45,7 +44,6 @@ class ConfigTrain:
     wandb_project: str
     wandb_entity: str
     wandb_mode: str
-
 
 
 # TODO: ConfigTest
@@ -94,21 +92,21 @@ class VizCallback(pl.Callback):
             batch_size = x.shape[0]
 
             choice = np.random.choice(range(batch_size), size=self.size, replace=True)
-            x = x[:,self.context_size].detach().cpu().numpy().squeeze()[choice]
+            x = x[:, self.context_size].detach().cpu().numpy().squeeze()[choice]
             y = y.detach().cpu().numpy().squeeze()[choice]
             y_hat = y_hat.detach().cpu().numpy().squeeze()[choice]
 
-            f, axes = plt.subplots(self.size, 3, figsize=(12, self.size*4))
+            f, axes = plt.subplots(self.size, 3, figsize=(12, self.size * 4))
             for i in range(self.size):
-                axes[i, 0].imshow(x[i], cmap='gray')
-                axes[i, 1].imshow(y[i], cmap='gray')
-                axes[i, 2].imshow(y_hat[i], cmap='gray')
-                axes[i, 0].axis('off')
-                axes[i, 1].axis('off')
-                axes[i, 2].axis('off')
-            axes[0, 0].set_title('Input')
-            axes[0, 1].set_title('Ground Truth')
-            axes[0, 2].set_title('Prediction')
+                axes[i, 0].imshow(x[i], cmap="gray")
+                axes[i, 1].imshow(y[i], cmap="gray")
+                axes[i, 2].imshow(y_hat[i], cmap="gray")
+                axes[i, 0].axis("off")
+                axes[i, 1].axis("off")
+                axes[i, 2].axis("off")
+            axes[0, 0].set_title("Input")
+            axes[0, 1].set_title("Ground Truth")
+            axes[0, 2].set_title("Prediction")
             plt.tight_layout()
             if isinstance(trainer.logger, pl.loggers.wandb.WandbLogger):
                 trainer.logger.log_image(key="Visualization", images=[f])

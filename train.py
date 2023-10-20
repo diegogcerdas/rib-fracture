@@ -8,11 +8,12 @@ import torch
 import torch.utils.data as data
 import wandb
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger, CSVLogger
+from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
 from dataset import RibFracDataset
-from model import UNet3plusModule, UNet3plusDsModule, UNet3plusDsCgmModule, UNetModule
-from utils import SetEpochCallback, config_from_args, VizCallback
+from model import (UNet3plusDsCgmModule, UNet3plusDsModule, UNet3plusModule,
+                   UNetModule)
+from utils import SetEpochCallback, VizCallback, config_from_args
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -97,14 +98,16 @@ if __name__ == "__main__":
         help="Download data in specified data directory if not present.",
     )
     parser.add_argument("--use-focal-loss", action=BooleanOptionalAction, default=False)
-    parser.add_argument("--use-msssim-loss", action=BooleanOptionalAction, default=False)
+    parser.add_argument(
+        "--use-msssim-loss", action=BooleanOptionalAction, default=False
+    )
 
     # Model Parameters
     parser.add_argument(
         "--use-model",
         type=str,
         choices=["unet3plus", "unet3plus-ds", "unet3plus-ds-cgm", "unet"],
-        default='unet3plus',
+        default="unet3plus",
         help="Unet3plus model to be used. valid options: unet3plus, unet3plus-ds, unet3plus-ds-cgm",
     )
     parser.add_argument(
@@ -120,7 +123,6 @@ if __name__ == "__main__":
         default=False,
         help="Using positional encoding or not",
     )
-
 
     # Training Parameters
     parser.add_argument("--seed", type=int, default=42)
@@ -227,7 +229,7 @@ if __name__ == "__main__":
         num_channels = 1 + 2 * cfg.context_size
         num_channels += 3 if cfg.use_positional_encoding else 0
         model = model_module(
-            n_channels= num_channels, 
+            n_channels=num_channels,
             learning_rate=cfg.learning_rate,
             weight_decay=cfg.weight_decay,
             cutoff_height=cfg.cutoff_height,
@@ -271,7 +273,7 @@ if __name__ == "__main__":
         logger=logger,
         callbacks=callbacks,
         num_sanity_val_steps=0,
-        log_every_n_steps=1
+        log_every_n_steps=1,
     )
 
     trainer.fit(model, train_loader, val_loader, ckpt_path=cfg.resume_ckpt)

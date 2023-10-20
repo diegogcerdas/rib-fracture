@@ -7,19 +7,17 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
-from torch import optim, nn
+from torch import optim
 from tqdm import tqdm
 
-from unet3plus.loss.hybridLoss import HybridLoss
-from unet3plus.metrics import IOUmetric, FPRmetric
-from unet3plus.models.UNet_3Plus import UNet_3Plus, UNet_3Plus_DeepSup, UNet_3Plus_DeepSup_CGM
+from unet3plus.loss import FocalLoss, IOUloss, MSSSIMloss
+from unet3plus.metrics import FPRmetric, IOUmetric
+from unet3plus.models.UNet import Unet
+from unet3plus.models.UNet_3Plus import (UNet_3Plus, UNet_3Plus_DeepSup,
+                                         UNet_3Plus_DeepSup_CGM)
 
 
 class BaseUnetModule(pl.LightningModule, abc.ABC):
-    """
-    Based on https://github.com/hiepph/unet-lightning/blob/master/Unet.py
-    """
-
     def __init__(
         self,
         learning_rate: float,
@@ -146,7 +144,9 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         for threshold in thresholds:
             dice_scores[threshold] = np.mean(dice_scores[threshold])
             self.log_stat(
-                f"{mode}_dice_coeff_{np.round(threshold, 1)}", dice_scores[threshold], on_step=False
+                f"{mode}_dice_coeff_{np.round(threshold, 1)}",
+                dice_scores[threshold],
+                on_step=False,
             )
 
     def log_stat(self, name, stat, on_step=True, prog_bar=False):
@@ -196,83 +196,11 @@ class UNetModule(BaseUnetModule):
         self.log_stat(f"{mode}_fpr_metric", fpr_metric, prog_bar=True)
         self.log_stat(f"{mode}_loss", loss, prog_bar=True)
         return loss
-    
+
     def predict_mask(self, x):
         y_hat = self(x)
         y_hat = F.sigmoid(y_hat)
         return y_hat
-
-
-class Unet(nn.Module):
-    def __init__(self, n_channels):
-        super(Unet, self).__init__()
-        self.n_channels = n_channels
-
-        def double_conv(in_channels, out_channels):
-            return nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-                nn.BatchNorm2d(out_channels),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-                nn.BatchNorm2d(out_channels),
-                nn.ReLU(inplace=True),
-            )
-
-        def down(in_channels, out_channels):
-            return nn.Sequential(
-                nn.MaxPool2d(2), double_conv(in_channels, out_channels)
-            )
-
-        class up(nn.Module):
-            def __init__(self, in_channels, out_channels, bilinear=True):
-                super().__init__()
-
-                if bilinear:
-                    self.up = nn.Upsample(
-                        scale_factor=2, mode="bilinear", align_corners=True
-                    )
-                else:
-                    self.up = nn.ConvTranpose2d(
-                        in_channels // 2, in_channels // 2, kernel_size=2, stride=2
-                    )
-
-                self.conv = double_conv(in_channels, out_channels)
-
-            def forward(self, x1, x2):
-                x1 = self.up(x1)
-                # [?, C, H, W]
-                diffY = x2.size()[2] - x1.size()[2]
-                diffX = x2.size()[3] - x1.size()[3]
-
-                x1 = F.pad(
-                    x1, [diffX // 2, diffX - diffX // 2, diffY // 2, diffY - diffY // 2]
-                )
-                x = torch.cat([x2, x1], dim=1)  ## why 1?
-                return self.conv(x)
-
-        self.inc = double_conv(self.n_channels, 64)
-        self.down1 = down(64, 128)
-        self.down2 = down(128, 256)
-        self.down3 = down(256, 512)
-        self.down4 = down(512, 512)
-        self.up1 = up(1024, 256)
-        self.up2 = up(512, 128)
-        self.up3 = up(256, 64)
-        self.up4 = up(128, 64)
-        self.out = nn.Conv2d(64, 1, kernel_size=1)
-
-    def forward(self, x):
-        x1 = self.inc(x)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
-        x5 = self.down4(x4)
-        x = self.up1(x5, x4)
-        x = self.up2(x, x3)
-        x = self.up3(x, x2)
-        x = self.up4(x, x1)
-        return self.out(x)
-
 
 
 class UNet3plusModule(BaseUnetModule):
@@ -307,7 +235,9 @@ class UNet3plusDsModule(BaseUnetModule):
     def __init__(self, n_channels, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.network = UNet_3Plus_DeepSup(n_channels)
-        self.loss = HybridLoss()
+        self.iou_loss = IOUloss()
+        self.focal_loss = FocalLoss()
+        self.msssim_loss = MSSSIMloss()
         self.iou_metric = IOUmetric()
         self.fpr_metric = FPRmetric()
 
@@ -318,13 +248,15 @@ class UNet3plusDsModule(BaseUnetModule):
         loss_seg_iou = 0
         loss_seg_msssim = 0
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
-            loss_d_focal, loss_d_iou, loss_d_msssim = self.loss(d_hat, y)
+            loss_d_iou = self.iou_loss(d_hat, y)
             loss_seg_iou = loss_seg_iou + loss_d_iou
             self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
             if self.use_focal_loss:
+                loss_d_focal = self.focal_loss(d_hat, y)
                 loss_seg_focal = loss_seg_focal + loss_d_focal
                 self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
             if self.use_msssim_loss:
+                loss_d_msssim = self.msssim_loss(d_hat, y)
                 loss_seg_msssim = loss_seg_msssim + loss_d_msssim
                 self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
         loss = loss_seg_iou
@@ -354,7 +286,9 @@ class UNet3plusDsCgmModule(BaseUnetModule):
     def __init__(self, n_channels, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.network = UNet_3Plus_DeepSup_CGM(n_channels)
-        self.seg_loss = HybridLoss()
+        self.iou_loss = IOUloss()
+        self.focal_loss = FocalLoss()
+        self.msssim_loss = MSSSIMloss()
         self.bce_loss = F.binary_cross_entropy_with_logits
         self.iou_metric = IOUmetric()
         self.fpr_metric = FPRmetric()
@@ -367,18 +301,22 @@ class UNet3plusDsCgmModule(BaseUnetModule):
         loss_seg_iou = 0
         loss_seg_msssim = 0
         for i, d_hat in enumerate([d1_hat, d2_hat, d3_hat, d4_hat, d5_hat]):
-            loss_d_focal, loss_d_iou, loss_d_msssim = self.seg_loss(d_hat, y)
+            loss_d_iou = self.iou_loss(d_hat, y)
             loss_seg_iou = loss_seg_iou + loss_d_iou
             self.log_stat(f"{mode}_iou_loss_d{i+1}", loss_d_iou)
             if self.use_focal_loss:
+                loss_d_focal = self.focal_loss(d_hat, y)
                 loss_seg_focal = loss_seg_focal + loss_d_focal
                 self.log_stat(f"{mode}_focal_loss_d{i+1}", loss_d_focal)
             if self.use_msssim_loss:
+                loss_d_msssim = self.msssim_loss(d_hat, y)
                 loss_seg_msssim = loss_seg_msssim + loss_d_msssim
                 self.log_stat(f"{mode}_msssim_loss_d{i+1}", loss_d_msssim)
-        
+
         cls_true = (y.sum(dim=(1, 2, 3)) > 0).long()  # cls=0/1
-        cls_true = F.one_hot(cls_true, num_classes=cls_hat.shape[1]).float()  # one-hot encoded, same shape as cls_hat
+        cls_true = F.one_hot(
+            cls_true, num_classes=cls_hat.shape[1]
+        ).float()  # one-hot encoded, same shape as cls_hat
         loss_cls = self.bce_loss(cls_hat, cls_true)
 
         loss_seg = loss_seg_iou

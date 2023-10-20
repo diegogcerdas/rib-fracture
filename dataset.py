@@ -13,22 +13,22 @@ from tqdm import tqdm
 
 class RibFracDataset(Dataset):
     def __init__(
-            self,
-            root_dir: str,
-            partition: str,
-            context_size: int,
-            patch_original_size: int,
-            patch_final_size: int,
-            proportion_fracture_in_patch: float,
-            cutoff_height: int,
-            clip_min_val: int,
-            clip_max_val: int,
-            data_mean: float,
-            data_std: float,
-            test_stride: int,
-            force_data_info: bool = False,
-            debug: bool = False,
-            use_positional_encoding: bool = False,
+        self,
+        root_dir: str,
+        partition: str,
+        context_size: int,
+        patch_original_size: int,
+        patch_final_size: int,
+        proportion_fracture_in_patch: float,
+        cutoff_height: int,
+        clip_min_val: int,
+        clip_max_val: int,
+        data_mean: float,
+        data_std: float,
+        test_stride: int,
+        force_data_info: bool = False,
+        debug: bool = False,
+        use_positional_encoding: bool = False,
     ):
         super().__init__()
         assert partition in ["train", "val", "test"]
@@ -85,7 +85,7 @@ class RibFracDataset(Dataset):
 
     def __getitem__(self, idx):
         # If training, create a random patch from the image and mask slices
-        if self.partition == "train" or self.partition == 'val':
+        if self.partition == "train" or self.partition == "val":
             row = self.df.iloc[idx]
             # Load image and mask slices
             filename = os.path.join(self.root_dir, row["img_filename"])
@@ -101,7 +101,9 @@ class RibFracDataset(Dataset):
                 img, mask, is_fracture_slice
             )
             # Transform image patch and mask patch together
-            patch = self.transform(torch.cat([img_patch, mask_patch], dim=0))  # now they are 256x256
+            patch = self.transform(
+                torch.cat([img_patch, mask_patch], dim=0)
+            )  # now they are 256x256
             # Split image patch and mask patch
             img_patch, mask_patch = patch[:-1], patch[-1:]
 
@@ -109,14 +111,26 @@ class RibFracDataset(Dataset):
                 x, y = random_coord
                 z_rel = z / size_z
                 z = int(z_rel * 512)
-                
-                enc_x = positional_encoding_2d(x, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
-                enc_y = positional_encoding_2d(y, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
-                enc_z = positional_encoding_2d(z, (self.patch_final_size, self.patch_final_size), device=img_patch.device)
+
+                enc_x = positional_encoding_2d(
+                    x,
+                    (self.patch_final_size, self.patch_final_size),
+                    device=img_patch.device,
+                )
+                enc_y = positional_encoding_2d(
+                    y,
+                    (self.patch_final_size, self.patch_final_size),
+                    device=img_patch.device,
+                )
+                enc_z = positional_encoding_2d(
+                    z,
+                    (self.patch_final_size, self.patch_final_size),
+                    device=img_patch.device,
+                )
 
                 # encodings are shape (HEIGHT, WIDTH)
                 # img_patch is shape (CHANNEL, HEIGHT, WIDTH)
-                
+
                 enc_x = enc_x.unsqueeze(0)
                 enc_y = enc_y.unsqueeze(0)
                 enc_z = enc_z.unsqueeze(0)
@@ -125,7 +139,7 @@ class RibFracDataset(Dataset):
                 img_patch_enc = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
 
                 return img_patch_enc, mask_patch
-            
+
             if self.debug:
                 return (
                     img_patch,
@@ -156,9 +170,9 @@ class RibFracDataset(Dataset):
             # Load image slice
             filename = os.path.join(self.root_dir, row["img_filename"])
 
-            # relative z only used if positional encoding      
+            # relative z only used if positional encoding
             img, relative_z = self.load_img(filename, row["slice_idx"])
-      
+
             # Create patch
             img_patch = crop_patch(img, coord, self.patch_original_size)
             # Normalize and transform image patch
@@ -185,18 +199,25 @@ class RibFracDataset(Dataset):
                 )
 
             if self.positional_encoding:
-                relative_x = round(ix  / img.shape[-1], 4)
+                relative_x = round(ix / img.shape[-1], 4)
                 relative_y = round(iy / img.shape[-1], 4)
                 relative_z = round(relative_z, 4)
-                
-                encoding_sin = self.create_sinusoidal_encoding(relative_x, relative_y, 
-                                                            relative_z, img_patch.shape[-2:])
+
+                encoding_sin = self.create_sinusoidal_encoding(
+                    relative_x, relative_y, relative_z, img_patch.shape[-2:]
+                )
                 # imp patch: BATCH, CHANNEL, HEIGHT, WIDTH; where CHANNEL = 1 + 2 x context_size
                 # appending encoding to the image patch
                 img_patch_enc = torch.cat([img_patch, encoding_sin], dim=0)
 
-                return img_patch_enc, coord, npy_filename, row["slice_idx"], self.patch_original_size
-        
+                return (
+                    img_patch_enc,
+                    coord,
+                    npy_filename,
+                    row["slice_idx"],
+                    self.patch_original_size,
+                )
+
             return (
                 img_patch,
                 coord,
@@ -213,14 +234,14 @@ class RibFracDataset(Dataset):
 
         img = torch.from_numpy(
             proxy_img.dataobj[
-            ...,
-            slice_idx - self.context_size: slice_idx + self.context_size + 1,
+                ...,
+                slice_idx - self.context_size : slice_idx + self.context_size + 1,
             ]
             .copy()
             .T
         ).float()
         img = self.preprocess(img)
-        
+
         return img, z, size_z
 
     def load_mask(self, mask_filename, slice_idx):
@@ -232,7 +253,7 @@ class RibFracDataset(Dataset):
             .unsqueeze(0)
         )
         return mask
-    
+
     def preprocess(self, img):
         """Preprocess image slice."""
 
@@ -265,11 +286,11 @@ class RibFracDataset(Dataset):
             for random_coord in np.random.permutation(coords):
                 random_coord_off = random_coord + random_offset
                 if random_coord_off[0] >= (
-                        img.shape[-1] - self.patch_original_size // 2
+                    img.shape[-1] - self.patch_original_size // 2
                 ):
                     continue
                 if random_coord_off[1] >= (
-                        img.shape[-1] - self.patch_original_size // 2
+                    img.shape[-1] - self.patch_original_size // 2
                 ):
                     continue
                 if random_coord_off[0] <= (self.patch_original_size // 2):
@@ -281,8 +302,8 @@ class RibFracDataset(Dataset):
                     mask, random_coord_off, self.patch_original_size
                 )
                 if (
-                        torch.sum(mask_patch) / mask_patch.numel()
-                        > self.proportion_fracture_in_patch
+                    torch.sum(mask_patch) / mask_patch.numel()
+                    > self.proportion_fracture_in_patch
                 ):
                     break
                 img_patch = crop_patch(img, random_coord, self.patch_original_size)
@@ -293,11 +314,11 @@ class RibFracDataset(Dataset):
             for random_coord in np.random.permutation(coords):
                 random_coord_off = random_coord + random_offset
                 if random_coord_off[0] >= (
-                        img.shape[-1] - self.patch_original_size // 2
+                    img.shape[-1] - self.patch_original_size // 2
                 ):
                     continue
                 if random_coord_off[1] >= (
-                        img.shape[-1] - self.patch_original_size // 2
+                    img.shape[-1] - self.patch_original_size // 2
                 ):
                     continue
                 if random_coord_off[0] <= (self.patch_original_size // 2):
@@ -333,7 +354,7 @@ class RibFracDataset(Dataset):
                 self.df[
                     (self.df.img_filename == img_filename)
                     & (self.df.slice_idx > (size - self.context_size))
-                    ].index,
+                ].index,
                 inplace=True,
             )
             # Drop slices without sufficient from below
@@ -341,7 +362,7 @@ class RibFracDataset(Dataset):
                 self.df[
                     (self.df.img_filename == img_filename)
                     & (self.df.slice_idx < self.context_size)
-                    ].index,
+                ].index,
                 inplace=True,
             )
 
@@ -392,7 +413,7 @@ class RibFracDataset(Dataset):
         def process_folder(folder_name):
             data = []
             for filename in tqdm(
-                    os.listdir(os.path.join(self.root_dir, folder_name)), desc=folder_name
+                os.listdir(os.path.join(self.root_dir, folder_name)), desc=folder_name
             ):
                 f = os.path.join(self.root_dir, folder_name, filename)
                 if filename.endswith(".nii") or filename.endswith(".nii.gz"):
@@ -503,22 +524,26 @@ class TestSampler(Sampler):
 
 def crop_patch(image, center_coord, patch_size):
     patch = image[
-            :,
-            center_coord[0] - patch_size // 2: center_coord[0] + patch_size // 2,
-            center_coord[1] - patch_size // 2: center_coord[1] + patch_size // 2,
-            ]
+        :,
+        center_coord[0] - patch_size // 2 : center_coord[0] + patch_size // 2,
+        center_coord[1] - patch_size // 2 : center_coord[1] + patch_size // 2,
+    ]
     return patch
 
 
-def positional_encoding(i, out_dim, device='cpu'):
-    div_term = torch.exp(-np.log(10000.0) * (2 * torch.arange(out_dim // 2, device=device) // 2) / out_dim)
+def positional_encoding(i, out_dim, device="cpu"):
+    div_term = torch.exp(
+        -np.log(10000.0)
+        * (2 * torch.arange(out_dim // 2, device=device) // 2)
+        / out_dim
+    )
     pe = torch.zeros(out_dim, device=device)
     pe[0::2] = torch.sin(i * div_term)
     pe[1::2] = torch.cos(i * div_term)
     return pe
 
 
-def positional_encoding_2d(i, out_dims, axis=0, device='cpu'):
+def positional_encoding_2d(i, out_dims, axis=0, device="cpu"):
     assert axis in [0, 1], "axis must be 0 or 1"
     posenc = positional_encoding(i, out_dims[axis], device=device)
     if axis == 0:
