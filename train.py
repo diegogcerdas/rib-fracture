@@ -13,7 +13,7 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from dataset import RibFracDataset
 from model import (UNet3plusDsCgmModule, UNet3plusDsModule, UNet3plusModule,
                    UNetModule)
-from utils import SetEpochCallback, VizCallback, config_from_args
+from utils import SetEpochCallback, VizCallback, config_from_args, save_config
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -150,6 +150,7 @@ if __name__ == "__main__":
     parser.add_argument("--wandb-mode", type=str, default="online")
     args = parser.parse_args()
     cfg = config_from_args(args, mode="train")
+    save_config(cfg, os.path.join(cfg.ckpt_root, cfg.exp_name, "config.json"))
 
     # Download data
     data_exists = os.path.exists(cfg.data_root) and os.listdir(cfg.data_root)

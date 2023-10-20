@@ -171,7 +171,7 @@ class RibFracDataset(Dataset):
             filename = os.path.join(self.root_dir, row["img_filename"])
 
             # relative z only used if positional encoding
-            img, relative_z = self.load_img(filename, row["slice_idx"])
+            img, z, size_z = self.load_img(filename, row["slice_idx"])
 
             # Create patch
             img_patch = crop_patch(img, coord, self.patch_original_size)
@@ -198,17 +198,35 @@ class RibFracDataset(Dataset):
                     img,
                 )
 
-            if self.positional_encoding:
-                relative_x = round(ix / img.shape[-1], 4)
-                relative_y = round(iy / img.shape[-1], 4)
-                relative_z = round(relative_z, 4)
+            if self.use_positional_encoding:
+                z_rel = z / size_z
+                z = int(z_rel * 512)
 
-                encoding_sin = self.create_sinusoidal_encoding(
-                    relative_x, relative_y, relative_z, img_patch.shape[-2:]
+                enc_x = positional_encoding_2d(
+                    ix,
+                    (self.patch_final_size, self.patch_final_size),
+                    device=img_patch.device,
                 )
-                # imp patch: BATCH, CHANNEL, HEIGHT, WIDTH; where CHANNEL = 1 + 2 x context_size
-                # appending encoding to the image patch
-                img_patch_enc = torch.cat([img_patch, encoding_sin], dim=0)
+                enc_y = positional_encoding_2d(
+                    iy,
+                    (self.patch_final_size, self.patch_final_size),
+                    device=img_patch.device,
+                )
+                enc_z = positional_encoding_2d(
+                    z,
+                    (self.patch_final_size, self.patch_final_size),
+                    device=img_patch.device,
+                )
+
+                # encodings are shape (HEIGHT, WIDTH)
+                # img_patch is shape (CHANNEL, HEIGHT, WIDTH)
+
+                enc_x = enc_x.unsqueeze(0)
+                enc_y = enc_y.unsqueeze(0)
+                enc_z = enc_z.unsqueeze(0)
+
+                # append encodings in the channel dimension
+                img_patch_enc = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
 
                 return (
                     img_patch_enc,
