@@ -96,6 +96,8 @@ if __name__ == "__main__":
         default=False,
         help="Download data in specified data directory if not present.",
     )
+    parser.add_argument("--use-focal-loss", action=BooleanOptionalAction, default=False)
+    parser.add_argument("--use-msssim-loss", action=BooleanOptionalAction, default=False)
 
     # Model Parameters
     parser.add_argument(
@@ -230,6 +232,8 @@ if __name__ == "__main__":
             weight_decay=cfg.weight_decay,
             cutoff_height=cfg.cutoff_height,
             data_root=cfg.data_root,
+            use_focal_loss=cfg.use_focal_loss,
+            use_msssim_loss=cfg.use_msssim_loss,
             log_every_step=cfg.log_every_step,
         )
 

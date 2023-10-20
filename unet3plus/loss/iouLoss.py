@@ -25,3 +25,4 @@ class IOUloss(torch.nn.Module):
 
     def forward(self, pred, target):
         return _iou(pred, target, self.size_average)
+

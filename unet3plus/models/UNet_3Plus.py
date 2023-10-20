@@ -689,8 +689,7 @@ class UNet_3Plus_DeepSup_CGM(nn.Module):
         self.cls = nn.Sequential(
                     nn.Dropout(p=0.5),
                     nn.Conv2d(filters[4], 2, 1),
-                    nn.AdaptiveMaxPool2d(1),
-                    nn.Sigmoid())
+                    nn.AdaptiveMaxPool2d(1))
 
         # initialise weights
         for m in self.modules():
