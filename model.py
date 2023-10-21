@@ -72,16 +72,27 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         p = patch_original_size // 2
         resize = transforms.Resize(patch_original_size, antialias=True)
 
+        # TODO remove zero patches
+        # print('SHAPE1', patches.shape)
+        # empty_patches = (patches.sum(dim=(1, 2, 3)) == 0)
+        # patches = patches[~empty_patches]
+        # coords = coords[~empty_patches]
+        # non_empty_indxs = np.where(~empty_patches)[0]
+        # filenames = [filenames[i] for i in non_empty_indxs]
+        # slice_idx = [slice_idx[i] for i in non_empty_indxs]
+        # print('SHAPE2', patches.shape)
+
+        # forward of all
+        pred_patches = self.predict_mask(patches)
+
         open_files = {}
-        for patch, coord, filename, slice_i in zip(
-            patches, coords, filenames, slice_idx
+        for pred_patch, coord, filename, slice_i in zip(
+            pred_patches, coords, filenames, slice_idx
         ):
-            if torch.all(patch == 0):
-                continue
             if coord[0] > self.cutoff_height:
                 continue
             output = (
-                resize(self.predict_mask(patch.unsqueeze(0)))
+                resize(pred_patch)
                 .squeeze()
                 .detach()
                 .cpu()

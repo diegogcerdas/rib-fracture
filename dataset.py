@@ -52,7 +52,10 @@ class RibFracDataset(Dataset):
         if not force_data_info and os.path.exists(self.data_info_path):
             self.df = pd.read_csv(self.data_info_path)
         else:
-            self.df = self.create_data_info_csv()
+            if partition == "test":
+                self.df = self.create_data_info_csv_test()
+            else:
+                self.df = self.create_data_info_csv()
 
         # Clean the DataFrame and prepare for sampling
         if partition == "train" or partition == "val":
@@ -157,14 +160,14 @@ class RibFracDataset(Dataset):
         # If validation or test, create patches from a predetermined coordinate
         else:
             # Divide index into row and patch indices
-            row_idx = int(idx // self.num_patches)
-            patch_idx = int(idx - (row_idx * self.num_patches))
+            row_idx = int(idx // self.num_patches)  # num of row of the df (each row is a slice)
+            patch_idx = int(idx - (row_idx * self.num_patches))  # num of patch in slice
             # Compute patch coordinates
-            row = self.df.iloc[row_idx]
-            p = self.patch_original_size // 2
-            num_patches_sqrt = int(np.sqrt(self.num_patches))
-            ix, iy = np.unravel_index(patch_idx, (num_patches_sqrt, num_patches_sqrt))
-            ix = (ix * self.test_stride) + p
+            row = self.df.iloc[row_idx]  # row is a slice
+            p = self.patch_original_size // 2  # padding to patch center (half of the patch size, same for both dimensions assuming square patches)
+            num_patches_sqrt = int(np.sqrt(self.num_patches))  # num of patches in each dimension (assuming square patches)
+            ix, iy = np.unravel_index(patch_idx, (num_patches_sqrt, num_patches_sqrt))  # index of patch in each dimension (assuming square patches)
+            ix = (ix * self.test_stride) + p  # translate back from patch index to coordinate
             iy = (iy * self.test_stride) + p
             coord = (ix, iy)
             # Load image slice
@@ -456,6 +459,48 @@ class RibFracDataset(Dataset):
                     "img_filename",
                     "slice_idx",
                     "labels",
+                    "min",
+                    "max",
+                    "mean",
+                    "std",
+                ],
+            )
+            return df
+
+        print(f"Collecting {self.partition} dataset info. This may take a while...")
+        df = process_folder(f"ribfrac-{self.partition}-images")
+        df = df.sort_values(by=["img_filename", "slice_idx"])
+        df.to_csv(self.data_info_path, index=False)
+        print("Done!")
+        return df
+    
+    def create_data_info_csv_test(self):
+        """Create a DataFrame with all available slices for this specific partition."""
+
+        def process_folder(folder_name):
+            data = []
+            for filename in tqdm(
+                os.listdir(os.path.join(self.root_dir, folder_name)), desc=folder_name
+            ):
+                f = os.path.join(self.root_dir, folder_name, filename)
+                if filename.endswith(".nii") or filename.endswith(".nii.gz"):
+                    scan = nib.load(f).get_fdata().T.astype(float)
+                    for i, slice in enumerate(scan):
+                        data.append(
+                            [
+                                os.path.join(folder_name, filename),
+                                i,
+                                slice.min(),
+                                slice.max(),
+                                slice.mean(),
+                                slice.std(),
+                            ]
+                        )
+            df = pd.DataFrame(
+                data,
+                columns=[
+                    "img_filename",
+                    "slice_idx",
                     "min",
                     "max",
                     "mean",

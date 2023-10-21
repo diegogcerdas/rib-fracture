@@ -133,6 +133,7 @@ if __name__ == "__main__":
         devices=1,
         logger=None,
     )
-    trainer.test(model, test_loader)  # TODO log results img&loss&metrics
+    trainer.test(model, test_loader)
+    #trainer.test(model, test_loader, ckpt_path=cfg_test.ckpt)
 
-    # VizCallback(cfg_train.context_size)
+    # TODO VizCallback(cfg_train.context_size)

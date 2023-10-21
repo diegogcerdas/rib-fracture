@@ -48,6 +48,7 @@ class ConfigTrain:
     wandb_mode: str
 
 
+@dataclass
 class ConfigTest:
     # data
     ckpt: str
