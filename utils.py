@@ -1,6 +1,7 @@
 import dataclasses
 import json
 from dataclasses import dataclass
+import torch
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -50,40 +51,7 @@ class ConfigTrain:
 # TODO: ConfigTest
 class ConfigTest:
     ckpt: str
-
-    # from train
-    patch_original_size: int
-    patch_final_size: int
-    cutoff_height: int
-    clip_min_val: int
-    clip_max_val: int
-    data_mean: float
-    data_std: float
-
-    test_stride: int
-
     data_root: str
-    force_data_info: bool
-    download_data: bool
-
-    use_focal_loss: bool
-    use_msssim_loss: bool
-
-    use_model: str
-    context_size: int
-    use_positional_encoding: bool
-
-    batch_size_test: int
-    num_workers: int
-    log_every_step: bool
-    device: str
-
-    exp_name: str
-    do_wandb: bool
-    wandb_key: str
-    wandb_project: str
-    wandb_entity: str
-    wandb_mode: str
 
 
 def config_from_args(args, mode="train"):
@@ -101,11 +69,13 @@ def config_from_args(args, mode="train"):
 
 def save_config(config, path):
     """saves config to json"""
+    dic = dataclasses.asdict(config)
+    dic['device'] = str(dic['device'])
     with open(path, "w") as f:
-        json.dump(dataclasses.asdict(config), f, indent=4)
+        json.dump(dic, f, indent=4)
 
 
-def load_config(path, args, mode="test"):
+def load_config(path, mode="test"):
     """loads config from json. args overwrites config values"""
     with open(path, "r") as f:
         lines = json.load(f)
@@ -115,9 +85,9 @@ def load_config(path, args, mode="test"):
         class_name = ConfigTest
     else:
         raise ValueError("Mode must be either 'train' or 'test'")
-    args = {f.name: getattr(args, f.name) for f in dataclasses.fields(class_name) if hasattr(args, f.name)}
-    lines.update(args)
-    return class_name(**{f.name: lines[f.name] for f in dataclasses.fields(class_name)})
+    lines = {f.name: lines[f.name] for f in dataclasses.fields(class_name)}
+    lines['device'] = torch.device(lines['device'])  # TODO: check if this works
+    return class_name(**lines)
 
 
 class SetEpochCallback(pl.Callback):

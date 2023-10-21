@@ -150,7 +150,8 @@ if __name__ == "__main__":
     parser.add_argument("--wandb-mode", type=str, default="online")
     args = parser.parse_args()
     cfg = config_from_args(args, mode="train")
-    save_config(cfg, os.path.join(cfg.ckpt_root, cfg.exp_name, "config.json"))
+    os.makedirs(os.path.join(cfg.ckpt_root, cfg.exp_name), exist_ok=True)
+    save_config(cfg, os.path.join(cfg.ckpt_root, cfg.exp_name, "config_train.json"))
 
     # Download data
     data_exists = os.path.exists(cfg.data_root) and os.listdir(cfg.data_root)

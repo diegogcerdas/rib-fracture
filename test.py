@@ -8,7 +8,7 @@ from pytorch_lightning.loggers import CSVLogger, WandbLogger
 import wandb
 from dataset import RibFracDataset
 from argparse import BooleanOptionalAction
-from utils import load_config
+from utils import load_config, config_from_args
 import torch.utils.data as data
 
 if __name__ == "__main__":
@@ -29,7 +29,10 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    cfg = load_config(os.path.join(os.path.dirname(args.ckpt), "config.json"), args, mode="test")
+    cfg_test = config_from_args(args, mode="test")
+    cfg_train = load_config(os.path.join(os.path.dirname(args.ckpt), "config_train.json"), mode="train")
+    # TODO configs
+
 
     test_set = RibFracDataset(
         root_dir=cfg.data_root,
