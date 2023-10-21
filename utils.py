@@ -23,7 +23,7 @@ class ConfigTrain:
     clip_max_val: int
     data_mean: float
     data_std: float
-    test_stride: int
+    test_stride: int  # unused
     force_data_info: bool
     download_data: bool
     use_focal_loss: bool
@@ -35,7 +35,7 @@ class ConfigTrain:
     learning_rate: float
     weight_decay: float
     batch_size_train: int
-    batch_size_test: int
+    batch_size_test: int  # for val
     num_workers: int
     max_epochs: int
     log_every_step: bool
@@ -48,10 +48,21 @@ class ConfigTrain:
     wandb_mode: str
 
 
-# TODO: ConfigTest
 class ConfigTest:
+    # data
     ckpt: str
     data_root: str
+    download_data: bool
+
+    # run
+    test_stride: int
+    batch_size_test: int
+    num_workers: int
+    device: str
+
+    # wandb
+    do_wandb: bool
+    wandb_key: str
 
 
 def config_from_args(args, mode="train"):
@@ -71,6 +82,7 @@ def save_config(config, path):
     """saves config to json"""
     dic = dataclasses.asdict(config)
     dic['device'] = str(dic['device'])
+    dic['wandb_key'] = None  # security
     with open(path, "w") as f:
         json.dump(dic, f, indent=4)
 

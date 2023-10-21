@@ -84,7 +84,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--test-stride", type=int, default=32, help="Stride for test/val patches."
-    )
+    )  # unused(?) in train.py
     parser.add_argument(
         "--force-data-info",
         action=BooleanOptionalAction,
