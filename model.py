@@ -86,6 +86,15 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         pred_patches = self.predict_mask(patches)
 
         open_files = {}
+        for filename in filenames:
+            open_files[filename] = np.memmap(
+                filename,
+                dtype=np.float16,
+                mode="r+",
+                shape=...,  # TODO
+            )
+            print(open_files[filename].shape)
+
         for pred_patch, coord, filename, slice_i in zip(
             pred_patches, coords, filenames, slice_idx
         ):
@@ -114,9 +123,6 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
                 ix - p : ix + p,
                 iy - p : iy + p,
             ] += 1
-
-        for filename in open_files.keys():
-            np.save(filename, open_files[filename])
 
     def compute_eval(self, mode):
         thresholds = np.linspace(0, 1, 11)
