@@ -2,7 +2,7 @@
 
 #SBATCH --partition=gpu
 #SBATCH --gpus-per-node=1
-#SBATCH --job-name=final12
+#SBATCH --job-name=final08
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
 #SBATCH --time=60:00:00
@@ -21,4 +21,4 @@ WANDB_KEY=
 
 cd ~/rib-fracture
 
-python train.py --exp-name expf12_final --wandb-id o8nujhhh --resume-ckpt checkpoints/expf12_final/last.ckpt --use-model unet3plus-ds --context-size 8 --use-msssim-loss --use-positional-encoding --do-wandb --wandb-key $WANDB_KEY --data-root $DATA_ROOT --download-data  --max-epochs 50 --batch-size-train 32 --batch-size-test 32 --patch-final-size 128
+python train.py --exp-name expf08_final --wandb-id 13iuaeli --resume-ckpt checkpoints/expf08_final/last.ckpt --use-model unet3plus-ds --context-size 0 --use-msssim-loss --do-wandb --wandb-key $WANDB_KEY --data-root $DATA_ROOT --download-data  --max-epochs 50 --batch-size-train 32 --batch-size-test 32 --patch-final-size 128
