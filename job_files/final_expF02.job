@@ -21,4 +21,4 @@ WANDB_KEY=
 
 cd ~/rib-fracture
 
-python train.py --exp-name expf02_final --use-model unet3plus-ds --context-size 8 --use-msssim-loss --do-wandb --wandb-key $WANDB_KEY --data-root $DATA_ROOT --download-data  --max-epochs 15 --batch-size-train 32 --batch-size-test 32 --patch-final-size 128
+python train.py --exp-name expf02_final --wandb-id ti8bvv1n --resume-ckpt checkpoints/expf02_final/last.ckpt --use-model unet3plus-ds --context-size 8 --use-msssim-loss --do-wandb --wandb-key $WANDB_KEY --data-root $DATA_ROOT --download-data  --max-epochs 50 --batch-size-train 32 --batch-size-test 32 --patch-final-size 128

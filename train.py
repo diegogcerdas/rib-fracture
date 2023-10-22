@@ -148,6 +148,7 @@ if __name__ == "__main__":
     parser.add_argument("--wandb-project", type=str, default="ribfrac_experiments")
     parser.add_argument("--wandb-entity", type=str, default="ribfrac_team7")
     parser.add_argument("--wandb-mode", type=str, default="online")
+    parser.add_argument("--wandb-id", type=str, default=None)
     args = parser.parse_args()
     cfg = config_from_args(args, mode="train")
     os.makedirs(os.path.join(cfg.ckpt_root, cfg.exp_name), exist_ok=True)
@@ -246,7 +247,7 @@ if __name__ == "__main__":
         save_top_k=1,
         save_last=True,
         monitor="val_metric",
-        mode="min",
+        mode="max",
     )
     os.makedirs(f"{cfg.ckpt_root}/{cfg.exp_name}", exist_ok=True)
     callbacks = [
@@ -256,12 +257,17 @@ if __name__ == "__main__":
 
     logger = []
     if cfg.do_wandb:
+        to_resume = cfg.resume_ckpt is not None
+        if cfg.wandb_id is None:
+            cfg.wandb_id = wandb.util.generate_id()
         wandb.login(key=cfg.wandb_key)
         wandb.init(
             name=cfg.exp_name,
             project=cfg.wandb_project,
             entity=cfg.wandb_entity,
             mode=cfg.wandb_mode,
+            resume="must" if to_resume else "allow",
+            id=cfg.wandb_id
         )
         wandb_logger = WandbLogger()
         logger.append(wandb_logger)

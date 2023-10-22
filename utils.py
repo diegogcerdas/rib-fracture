@@ -46,6 +46,7 @@ class ConfigTrain:
     wandb_project: str
     wandb_entity: str
     wandb_mode: str
+    wandb_id: str
 
 
 @dataclass
