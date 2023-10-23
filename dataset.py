@@ -1,6 +1,5 @@
 import ast
 import os
-import shutil
 
 import nibabel as nib
 import numpy as np
@@ -55,8 +54,6 @@ class RibFracDataset(Dataset):
         else:
             if partition == "test":
                 self.df = self.create_data_info_csv_test()
-                self.img_size, self.num_patches = self.compute_img_size_and_num_patches()
-                self.create_local_pred_masks()
             else:
                 self.df = self.create_data_info_csv()
 
@@ -67,7 +64,7 @@ class RibFracDataset(Dataset):
             self.add_df_index()
         else:
             self.img_size, self.num_patches = self.compute_img_size_and_num_patches()
-            self.copy_local_pred_masks()
+            self.create_local_pred_masks()
             self.drop_slices_without_context()
 
         # Set up transforms
@@ -402,7 +399,7 @@ class RibFracDataset(Dataset):
         self.df["df_index"] = np.arange(len(self.df))
 
     def create_local_pred_masks(self):
-        pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks-empty")
+        pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
         s = self.img_size + 2 * (self.patch_original_size // 2)
@@ -416,11 +413,6 @@ class RibFracDataset(Dataset):
                 .replace(".gz", "")
             )
             np.save(os.path.join(pred_dir, filename), pred_mask)
-
-    def copy_local_pred_masks(self):
-        pred_dir_old = os.path.join(self.root_dir, f"{self.partition}-pred-masks-empty")
-        pred_dir_new = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
-        shutil.copytree(pred_dir_old, pred_dir_new, dirs_exist_ok=True)
 
     def compute_img_size_and_num_patches(self):
         filename = os.path.join(self.root_dir, self.df.iloc[0]["img_filename"])
