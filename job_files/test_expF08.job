@@ -2,7 +2,7 @@
 
 #SBATCH --partition=gpu
 #SBATCH --gpus-per-node=1
-#SBATCH --job-name=rf_test12
+#SBATCH --job-name=rf_test08
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
 #SBATCH --time=60:00:00
@@ -17,7 +17,7 @@ source activate rib
 
 DATA_ROOT=/scratch-shared/$USER/data/
 
-CKPT=checkpoints/exp12/best.ckpt
+CKPT=checkpoints/exp08/best.ckpt
 
 cd ~/rib-fracture
 
