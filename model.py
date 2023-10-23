@@ -10,6 +10,7 @@ import torchvision.transforms as transforms
 from torch import optim
 from tqdm import tqdm
 import pandas as pd
+from numpy.lib.format import open_memmap
 
 from unet3plus.loss import FocalLoss, IOUloss, MSSSIMloss
 from unet3plus.metrics import FPRmetric, IOUmetric
@@ -121,6 +122,14 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
             open_files[filename].flush()
 
     def postprocessing(self, mode):
+        for filename in os.listdir(f'{mode}-pred-masks'):
+            filename = os.path.join(f'{mode}-pred-masks', filename)
+            arr = np.memmap(filename, dtype=np.float16, mode='r', shape=shape)
+            arr_tmp = open_memmap('tmp.npy', mode='w+', dtype=np.float16, shape=shape)
+            arr_tmp[:] = arr[:]
+            np.save(filename, arr_tmp)
+            os.remove('tmp.npy')
+
         pred_dir = os.path.join(self.data_root, f"{mode}-pred-masks-final")
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
