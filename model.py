@@ -140,7 +140,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         df = df.drop_duplicates(subset=['img_filename'])[['img_filename', 'scan_shape', 'slice_idx']]
 
         for filename, shape in tqdm(df[['img_filename', 'scan_shape']].values, desc="Postprocessing"):
-            filename = os.basename(filename)
+            filename = os.path.basename(filename)
             shape = tuple(map(int, shape[1:-1].split(', ')))
             pred_filename = os.path.join(pred_dir, filename.replace("image.nii", "pred_mask.npy").replace(".gz", ""))
             prediction = np.empty(shape)
