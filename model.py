@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch import optim
 from tqdm import tqdm
+import pandas as pd
 
 from unet3plus.loss import FocalLoss, IOUloss, MSSSIMloss
 from unet3plus.metrics import FPRmetric, IOUmetric
@@ -70,6 +71,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         coords = torch.stack(coords).transpose(0, 1)
         patch_original_size = pts[0].item()
         p = patch_original_size // 2
+        self.p = p
         context_size = ctx[0].item()
         resize = transforms.Resize(patch_original_size, antialias=True)
 
@@ -117,6 +119,31 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
 
         for filename in open_files.keys():
             open_files[filename].flush()
+
+    def postprocessing(self, mode):
+        pred_dir = os.path.join(self.data_root, f"{mode}-pred-masks-final")
+        os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
+
+        df = pd.read_csv(os.path.join(self.data_root, f"{mode}_data_info.csv"))
+        df = df.drop_duplicates(subset=['img_filename'])[['img_filename', 'scan_shape', 'slice_idx']]
+
+        for filename, shape in tqdm(df[['img_filename', 'scan_shape']].values, desc="Postprocessing"):
+            filename = os.basename(filename)
+            shape = tuple(map(int, shape[1:-1].split(', ')))
+            pred_filename = os.path.join(pred_dir, filename.replace("image.nii", "pred_mask.npy").replace(".gz", ""))
+            prediction = np.empty(shape)
+            df_sub = df[df.img_filename == filename]
+            for slice in df_sub['slice_idx'].values:
+                f = filename.replace("image.nii", f"pred_mask_{slice:03d}.npy").replace(".gz", "")
+                f = os.path.join(self.data_root, f"{mode}-pred-masks", f)
+                arr = np.load(f)
+                p = self.p
+                arr[1][arr[1] == 0] = 1
+                arr = arr[0][p : - p, p : - p] / (arr[1][p : - p, p : - p])
+                arr = arr.T
+                prediction[slice] = arr
+            np.save(pred_filename, prediction.astype(np.float16))
+
 
     def compute_eval(self, mode):
         thresholds = np.linspace(0, 1, 11)
@@ -181,6 +208,9 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
 
     def test_step(self, batch, batch_idx):
         self.update_pred_masks(batch)
+
+    def on_test_end(self) -> None:
+        self.postprocessing()
 
 
 class UNetModule(BaseUnetModule):
