@@ -68,12 +68,13 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         return y_hat
 
     def update_pred_masks(self, batch):
-        patches, coords, filenames, pts, ctx, shapes = batch
+        patches, coords, filenames, pts, ctx, shapes, exps = batch
         coords = torch.stack(coords).transpose(0, 1)
         patch_original_size = pts[0].item()
         p = patch_original_size // 2
         self.p = p
         context_size = ctx[0].item()
+        self.exp_name = exps[0]
         resize = transforms.Resize(patch_original_size, antialias=True)
 
         pred_patches = (
@@ -123,7 +124,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
 
     def postprocessing(self, mode):
 
-        pred_dir = os.path.join(self.data_root, f"{mode}-pred-masks-final")
+        pred_dir = os.path.join(self.data_root, f"{self.exp_name}-{mode}-pred-masks-final")
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
         df = pd.read_csv(os.path.join(self.data_root, f"{mode}_data_info.csv"))
@@ -137,7 +138,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
             df_sub = df[df.img_filename == filename_large]
             for slice in df_sub['slice_idx'].values:
                 f = filename.replace("image.nii", f"pred_mask_{slice:03d}.npy").replace(".gz", "")
-                f = os.path.join(self.data_root, f"{mode}-pred-masks", f)
+                f = os.path.join(self.data_root, f"{self.exp_name}-{mode}-pred-masks", f)
                 p = self.p
                 arr_side = shape[-1] + 2 * p
                 arr_shape = (2, arr_side, arr_side)

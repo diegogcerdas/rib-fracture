@@ -29,6 +29,7 @@ class RibFracDataset(Dataset):
         force_data_info: bool = False,
         debug: bool = False,
         use_positional_encoding: bool = False,
+        exp_name: str = None,
     ):
         super().__init__()
         assert partition in ["train", "val", "test"]
@@ -46,6 +47,7 @@ class RibFracDataset(Dataset):
         self.use_positional_encoding = use_positional_encoding
         self.data_mean = data_mean
         self.data_std = data_std
+        self.exp_name = exp_name
 
         # Compute a DataFrame of all available slices
         self.data_info_path = os.path.join(root_dir, f"{partition}_data_info.csv")
@@ -184,7 +186,7 @@ class RibFracDataset(Dataset):
 
             npy_filename = os.path.join(
                 self.root_dir,
-                f"{self.partition}-pred-masks",
+                f"{self.exp_name}-{self.partition}-pred-masks",
                 os.path.basename(filename)
                 .replace("image", "pred_mask_{:03d}".format(row["slice_idx"]))
                 .replace(".nii", ".npy")
@@ -241,6 +243,7 @@ class RibFracDataset(Dataset):
                 self.patch_original_size,
                 self.context_size,
                 scan_shape,
+                self.exp_name,
             )
 
     def load_img(self, img_filename, slice_idx):
@@ -400,7 +403,7 @@ class RibFracDataset(Dataset):
         self.df["df_index"] = np.arange(len(self.df))
 
     def create_local_pred_masks(self):
-        pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
+        pred_dir = os.path.join(self.root_dir, f"{self.exp_name}-{self.partition}-pred-masks")
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
         s = self.img_size + 2 * (self.patch_original_size // 2)

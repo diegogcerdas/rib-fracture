@@ -97,6 +97,7 @@ if __name__ == "__main__":
         test_stride=cfg_test.test_stride,
         force_data_info=cfg_train.force_data_info,
         use_positional_encoding=cfg_train.use_positional_encoding,
+        exp_name=exp_name,
     )
     test_sampler = test_set.get_test_sampler()
     test_loader = data.DataLoader(
