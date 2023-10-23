@@ -79,6 +79,9 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
                 .cpu()
                 .numpy()
             )
+        
+        print(pred_patches.shape[0])
+        num = 0
 
         open_files = {}
         for pred, patch, coord, filename, slice_i in zip(
@@ -105,6 +108,10 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
                 ix - p : ix + p,
                 iy - p : iy + p,
             ] += 1
+
+            num += 1
+        
+        print(num)
 
         for filename in open_files.keys():
             np.save(filename, open_files[filename])
