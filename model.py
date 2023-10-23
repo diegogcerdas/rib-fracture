@@ -80,9 +80,6 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
                 .cpu()
                 .numpy()
             )
-        
-        print(pred_patches.shape[0])
-        num = 0
 
         open_files = {}
         for pred, patch, coord, filename, shape in zip(
@@ -115,10 +112,6 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
                 ix - p : ix + p,
                 iy - p : iy + p,
             ] += 1
-
-            num += 1
-        
-        print(num)
 
         for filename in open_files.keys():
             open_files[filename].flush()

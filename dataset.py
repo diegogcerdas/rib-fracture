@@ -1,5 +1,6 @@
 import ast
 import os
+import shutil
 
 import nibabel as nib
 import numpy as np
@@ -54,6 +55,7 @@ class RibFracDataset(Dataset):
         else:
             if partition == "test":
                 self.df = self.create_data_info_csv_test()
+                self.create_local_pred_masks()
             else:
                 self.df = self.create_data_info_csv()
 
@@ -64,7 +66,7 @@ class RibFracDataset(Dataset):
             self.add_df_index()
         else:
             self.img_size, self.num_patches = self.compute_img_size_and_num_patches()
-            self.create_local_pred_masks()
+            self.copy_local_pred_masks()
             self.drop_slices_without_context()
 
         # Set up transforms
@@ -231,7 +233,7 @@ class RibFracDataset(Dataset):
                 # append encodings in the channel dimension
                 img_patch = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
 
-            scan_shape = tuple(map(int, row['scan_shape'][1:-1].split(', ')))
+            scan_shape = torch.tensor(list(map(int, row['scan_shape'][1:-1].split(', '))))
 
             return (
                 img_patch,
@@ -399,9 +401,11 @@ class RibFracDataset(Dataset):
         self.df["df_index"] = np.arange(len(self.df))
 
     def create_local_pred_masks(self):
-
-        pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
+        pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks-empty")
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
+
+        s = self.img_size + 2 * (self.patch_original_size // 2)
+        pred_mask = np.zeros((2, s, s)).astype(np.float16)
 
         for img_filename, slice in tqdm(self.df[["img_filename", "slice_idx"]].values, desc="Creating local prediction masks"):
             filename = (
@@ -410,28 +414,12 @@ class RibFracDataset(Dataset):
                 .replace(".nii", ".npy")
                 .replace(".gz", "")
             )
-            s = self.img_size + 2 * (self.patch_original_size // 2)
-            pred_mask = np.zeros((2, s, s)).astype(np.float16)
             np.save(os.path.join(pred_dir, filename), pred_mask)
 
-    # def create_local_pred_masks(self):
-    #     sizes = self.df.sort_values(by=["img_filename", "slice_idx"])
-    #     sizes = sizes.drop_duplicates(subset=["img_filename"], keep="last")
-    #     sizes = sizes[["img_filename", "slice_idx"]].values
-
-    #     pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
-    #     os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
-
-    #     for img_filename, size in tqdm(sizes, desc="Creating local prediction masks"):
-    #         filename = (
-    #             os.path.basename(img_filename)
-    #             .replace("image", "pred_mask")
-    #             .replace(".nii", ".npy")
-    #             .replace(".gz", "")
-    #         )
-    #         s = self.img_size + 2 * (self.patch_original_size // 2)
-    #         pred_mask = np.zeros((2, size + 1, s, s)).astype(np.float16)
-    #         np.save(os.path.join(pred_dir, filename), pred_mask)
+    def copy_local_pred_masks(self):
+        pred_dir_old = os.path.join(self.root_dir, f"{self.partition}-pred-masks-empty")
+        pred_dir_new = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
+        shutil.copytree(pred_dir_old, pred_dir_new)
 
     def compute_img_size_and_num_patches(self):
         filename = os.path.join(self.root_dir, self.df.iloc[0]["img_filename"])
