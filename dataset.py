@@ -414,24 +414,24 @@ class RibFracDataset(Dataset):
             pred_mask = np.zeros((2, s, s)).astype(np.float16)
             np.save(os.path.join(pred_dir, filename), pred_mask)
 
-    def create_local_pred_masks(self):
-        sizes = self.df.sort_values(by=["img_filename", "slice_idx"])
-        sizes = sizes.drop_duplicates(subset=["img_filename"], keep="last")
-        sizes = sizes[["img_filename", "slice_idx"]].values
+    # def create_local_pred_masks(self):
+    #     sizes = self.df.sort_values(by=["img_filename", "slice_idx"])
+    #     sizes = sizes.drop_duplicates(subset=["img_filename"], keep="last")
+    #     sizes = sizes[["img_filename", "slice_idx"]].values
 
-        pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
-        os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
+    #     pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
+    #     os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
-        for img_filename, size in tqdm(sizes, desc="Creating local prediction masks"):
-            filename = (
-                os.path.basename(img_filename)
-                .replace("image", "pred_mask")
-                .replace(".nii", ".npy")
-                .replace(".gz", "")
-            )
-            s = self.img_size + 2 * (self.patch_original_size // 2)
-            pred_mask = np.zeros((2, size + 1, s, s)).astype(np.float16)
-            np.save(os.path.join(pred_dir, filename), pred_mask)
+    #     for img_filename, size in tqdm(sizes, desc="Creating local prediction masks"):
+    #         filename = (
+    #             os.path.basename(img_filename)
+    #             .replace("image", "pred_mask")
+    #             .replace(".nii", ".npy")
+    #             .replace(".gz", "")
+    #         )
+    #         s = self.img_size + 2 * (self.patch_original_size // 2)
+    #         pred_mask = np.zeros((2, size + 1, s, s)).astype(np.float16)
+    #         np.save(os.path.join(pred_dir, filename), pred_mask)
 
     def compute_img_size_and_num_patches(self):
         filename = os.path.join(self.root_dir, self.df.iloc[0]["img_filename"])
