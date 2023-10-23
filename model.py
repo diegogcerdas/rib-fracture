@@ -66,11 +66,15 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         return y_hat
 
     def update_pred_masks(self, batch):
-        patches, coords, filenames, slice_idx, pts = batch
+        patches, coords, filenames, slice_idx, pts, ctx, shapes = batch
         coords = torch.stack(coords).transpose(0, 1)
         patch_original_size = pts[0].item()
         p = patch_original_size // 2
+        context_size = ctx[0].item()
         resize = transforms.Resize(patch_original_size, antialias=True)
+
+        nonzero = (patches[:, context_size].sum(dim=(-1, -2)) > 0.05)
+        patches = patches[nonzero]
 
         pred_patches = (
                 resize(self.predict_mask(patches))
@@ -84,18 +88,27 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         num = 0
 
         open_files = {}
-        for pred, patch, coord, filename, slice_i in zip(
-            pred_patches, patches, coords, filenames, slice_idx
+        for pred, coord, filename, slice_i, shape in zip(
+            pred_patches, coords, filenames, slice_idx, shapes
         ):
-            if torch.all(patch < 0.05):
-                continue
             if coord[0] > self.cutoff_height:
                 continue
             
             ix, iy = coord
+            shape = list(shape)
+            shape.insert(0, 2)
+            shape[-2] += 2*p
+            shape[-1] += 2*p
+            shape = tuple(shape)
 
             if filename not in open_files:
-                open_files[filename] = np.load(filename)
+                open_files[filename] = np.memmap(
+                    filename,
+                    dtype=np.float16,
+                    mode="w+",
+                    shape=shape,
+                )
+
             open_files[filename][
                 0,
                 slice_i,
@@ -114,7 +127,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         print(num)
 
         for filename in open_files.keys():
-            np.save(filename, open_files[filename])
+            open_files[filename].flush()
 
     def compute_eval(self, mode):
         thresholds = np.linspace(0, 1, 11)

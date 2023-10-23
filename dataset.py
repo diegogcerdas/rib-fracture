@@ -229,15 +229,9 @@ class RibFracDataset(Dataset):
                 enc_z = enc_z.unsqueeze(0)
 
                 # append encodings in the channel dimension
-                img_patch_enc = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
+                img_patch = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
 
-                return (
-                    img_patch_enc,
-                    coord,
-                    npy_filename,
-                    row["slice_idx"],
-                    self.patch_original_size,
-                )
+            scan_shape = tuple(map(int, row['scan_shape'][1:-1].split(', ')))
 
             return (
                 img_patch,
@@ -245,6 +239,8 @@ class RibFracDataset(Dataset):
                 npy_filename,
                 row["slice_idx"],
                 self.patch_original_size,
+                self.context_size,
+                scan_shape,
             )
 
     def load_img(self, img_filename, slice_idx):
@@ -494,6 +490,7 @@ class RibFracDataset(Dataset):
                                 slice.max(),
                                 slice.mean(),
                                 slice.std(),
+                                scan.shape
                             ]
                         )
             df = pd.DataFrame(
@@ -505,6 +502,7 @@ class RibFracDataset(Dataset):
                     "max",
                     "mean",
                     "std",
+                    "scan_shape"
                 ],
             )
             return df
