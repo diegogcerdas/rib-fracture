@@ -72,36 +72,16 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         p = patch_original_size // 2
         resize = transforms.Resize(patch_original_size, antialias=True)
 
-        # TODO remove zero patches
-        # print('SHAPE1', patches.shape)
-        # empty_patches = (patches.sum(dim=(1, 2, 3)) == 0)
-        # patches = patches[~empty_patches]
-        # coords = coords[~empty_patches]
-        # non_empty_indxs = np.where(~empty_patches)[0]
-        # filenames = [filenames[i] for i in non_empty_indxs]
-        # slice_idx = [slice_idx[i] for i in non_empty_indxs]
-        # print('SHAPE2', patches.shape)
-
-        # forward of all
-        pred_patches = self.predict_mask(patches)
-
         open_files = {}
-        for filename in filenames:
-            open_files[filename] = np.memmap(
-                filename,
-                dtype=np.float16,
-                mode="r+",
-                shape=...,  # TODO
-            )
-            print(open_files[filename].shape)
-
-        for pred_patch, coord, filename, slice_i in zip(
-            pred_patches, coords, filenames, slice_idx
+        for patch, coord, filename, slice_i in zip(
+            patches, coords, filenames, slice_idx
         ):
+            if torch.all(patch == 0):
+                continue
             if coord[0] > self.cutoff_height:
                 continue
             output = (
-                resize(pred_patch)
+                resize(self.predict_mask(patch.unsqueeze(0)))
                 .squeeze()
                 .detach()
                 .cpu()
@@ -123,6 +103,9 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
                 ix - p : ix + p,
                 iy - p : iy + p,
             ] += 1
+
+        for filename in open_files.keys():
+            np.save(filename, open_files[filename])
 
     def compute_eval(self, mode):
         thresholds = np.linspace(0, 1, 11)
@@ -187,9 +170,6 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
 
     def test_step(self, batch, batch_idx):
         self.update_pred_masks(batch)
-
-    def on_test_epoch_end(self) -> None:
-        self.compute_eval("test")
 
 
 class UNetModule(BaseUnetModule):
