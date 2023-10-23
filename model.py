@@ -122,16 +122,6 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
             open_files[filename].flush()
 
     def postprocessing(self, mode):
-        pred_dir = os.path.join(self.data_root, f"{mode}-pred-masks")
-        shape = (2, 576, 576) # TODO: avoid hardcode, but it's ok for now
-        
-        for filename in os.listdir(pred_dir):
-            filename = os.path.join(pred_dir, filename)
-            arr = np.memmap(filename, dtype=np.float16, mode='r', shape=shape)
-            arr_tmp = open_memmap('tmp.npy', mode='w+', dtype=np.float16, shape=shape)
-            arr_tmp[:] = arr[:]
-            np.save(filename, arr_tmp)
-            os.remove('tmp.npy')
 
         pred_dir = os.path.join(self.data_root, f"{mode}-pred-masks-final")
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
@@ -148,12 +138,17 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
             for slice in df_sub['slice_idx'].values:
                 f = filename.replace("image.nii", f"pred_mask_{slice:03d}.npy").replace(".gz", "")
                 f = os.path.join(self.data_root, f"{mode}-pred-masks", f)
-                arr = np.load(f)
                 p = self.p
-                arr[1][arr[1] == 0] = 1
-                arr = arr[0][p : - p, p : - p] / (arr[1][p : - p, p : - p])
-                arr = arr.T
-                prediction[slice] = arr
+                arr_side = shape[-1] + 2 * p
+                arr_shape = (2, arr_side, arr_side)
+                arr = np.memmap(f, dtype=np.float16, mode='r', shape=arr_shape)
+                arr_tmp = open_memmap('tmp.npy', mode='w+', dtype=np.float16, shape=arr_shape)
+                arr_tmp[:] = arr[:]
+                arr_tmp[1][arr_tmp[1] == 0] = 1
+                arr_tmp = arr_tmp[0][p : - p, p : - p] / (arr_tmp[1][p : - p, p : - p])
+                arr_tmp = arr_tmp.T
+                prediction[slice] = arr_tmp
+                os.remove('tmp.npy')
             np.save(pred_filename, prediction.astype(np.float16))
 
 
