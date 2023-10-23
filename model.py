@@ -87,6 +87,8 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         ):
             if torch.all(patch[context_size] < 0.05):
                 continue
+            if torch.all(pred < 0.05):
+                continue
             if coord[0] > self.cutoff_height:
                 continue
             

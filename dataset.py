@@ -420,7 +420,7 @@ class RibFracDataset(Dataset):
     def copy_local_pred_masks(self):
         pred_dir_old = os.path.join(self.root_dir, f"{self.partition}-pred-masks-empty")
         pred_dir_new = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
-        shutil.copytree(pred_dir_old, pred_dir_new)
+        shutil.copytree(pred_dir_old, pred_dir_new, dirs_exist_ok=True)
 
     def compute_img_size_and_num_patches(self):
         filename = os.path.join(self.root_dir, self.df.iloc[0]["img_filename"])
