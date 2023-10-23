@@ -55,6 +55,7 @@ class RibFracDataset(Dataset):
         else:
             if partition == "test":
                 self.df = self.create_data_info_csv_test()
+                self.img_size, self.num_patches = self.compute_img_size_and_num_patches()
                 self.create_local_pred_masks()
             else:
                 self.df = self.create_data_info_csv()
