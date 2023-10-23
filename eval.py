@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 import pytorch_lightning as pl
 import argparse
@@ -72,6 +73,14 @@ if __name__ == "__main__":
     
     exp_name = "eval_" + cfg_train.exp_name
 
+    test_data_root = os.path.join(cfg_test.data_root, "ribfrac-test-images")
+    data_exists = os.path.exists(test_data_root) and os.listdir(test_data_root)
+    if cfg_test.download_data and not data_exists:
+        HERE = os.path.dirname(os.path.realpath(__file__))
+        scriptfile = os.path.join(HERE, "ribfrac_download_test.sh")
+        logfile = os.path.join(HERE, "ribfrac_download_test.log")
+        subprocess.run(["bash", scriptfile, cfg_test.data_root], stdout=open(logfile, "w"))
+
     # dataloader
     test_set = RibFracDataset(
         root_dir=cfg_test.data_root,
@@ -88,6 +97,7 @@ if __name__ == "__main__":
         test_stride=cfg_test.test_stride,
         force_data_info=cfg_train.force_data_info,
         use_positional_encoding=cfg_train.use_positional_encoding,
+        exp_name=exp_name,
     )
     test_sampler = test_set.get_test_sampler()
     test_loader = data.DataLoader(
@@ -111,7 +121,8 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError(f"Unknown model {cfg_train.use_model}")
 
-    model = model_module.load_from_checkpoint(cfg_test.ckpt)
+    model = model_module.load_from_checkpoint(cfg_test.ckpt, map_location=torch.device(cfg_test.device))
+    model.data_root = cfg_test.data_root
 
     # logger
     logger = []
@@ -131,9 +142,6 @@ if __name__ == "__main__":
     trainer = pl.Trainer(
         accelerator="gpu" if str(cfg_test.device).startswith("cuda") else "cpu",
         devices=1,
-        logger=None,
+        logger=logger,
     )
     trainer.test(model, test_loader)
-    #trainer.test(model, test_loader, ckpt_path=cfg_test.ckpt)
-
-    # TODO VizCallback(cfg_train.context_size)

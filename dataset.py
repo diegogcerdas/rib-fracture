@@ -29,6 +29,7 @@ class RibFracDataset(Dataset):
         force_data_info: bool = False,
         debug: bool = False,
         use_positional_encoding: bool = False,
+        exp_name: str = None,
     ):
         super().__init__()
         assert partition in ["train", "val", "test"]
@@ -46,6 +47,7 @@ class RibFracDataset(Dataset):
         self.use_positional_encoding = use_positional_encoding
         self.data_mean = data_mean
         self.data_std = data_std
+        self.exp_name = exp_name
 
         # Compute a DataFrame of all available slices
         self.data_info_path = os.path.join(root_dir, f"{partition}_data_info.csv")
@@ -184,9 +186,9 @@ class RibFracDataset(Dataset):
 
             npy_filename = os.path.join(
                 self.root_dir,
-                f"{self.partition}-pred-masks",
+                f"{self.exp_name}-{self.partition}-pred-masks",
                 os.path.basename(filename)
-                .replace("image", "pred_mask")
+                .replace("image", "pred_mask_{:03d}".format(row["slice_idx"]))
                 .replace(".nii", ".npy")
                 .replace(".gz", ""),
             )
@@ -229,22 +231,19 @@ class RibFracDataset(Dataset):
                 enc_z = enc_z.unsqueeze(0)
 
                 # append encodings in the channel dimension
-                img_patch_enc = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
+                img_patch = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
 
-                return (
-                    img_patch_enc,
-                    coord,
-                    npy_filename,
-                    row["slice_idx"],
-                    self.patch_original_size,
-                )
+            scan_shape = row['scan_shape']
+            scan_shape = torch.tensor(list(map(int, scan_shape[1:-1].split(', '))))
 
             return (
                 img_patch,
                 coord,
                 npy_filename,
-                row["slice_idx"],
                 self.patch_original_size,
+                self.context_size,
+                scan_shape,
+                self.exp_name,
             )
 
     def load_img(self, img_filename, slice_idx):
@@ -404,22 +403,19 @@ class RibFracDataset(Dataset):
         self.df["df_index"] = np.arange(len(self.df))
 
     def create_local_pred_masks(self):
-        sizes = self.df.sort_values(by=["img_filename", "slice_idx"])
-        sizes = sizes.drop_duplicates(subset=["img_filename"], keep="last")
-        sizes = sizes[["img_filename", "slice_idx"]].values
-
-        pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
+        pred_dir = os.path.join(self.root_dir, f"{self.exp_name}-{self.partition}-pred-masks")
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
-        for img_filename, size in tqdm(sizes, desc="Creating local prediction masks"):
+        s = self.img_size + 2 * (self.patch_original_size // 2)
+        pred_mask = np.zeros((2, s, s)).astype(np.float16)
+
+        for img_filename, slice in tqdm(self.df[["img_filename", "slice_idx"]].values, desc="Creating local prediction masks"):
             filename = (
                 os.path.basename(img_filename)
-                .replace("image", "pred_mask")
+                .replace("image", "pred_mask_{:03d}".format(slice))
                 .replace(".nii", ".npy")
                 .replace(".gz", "")
             )
-            s = self.img_size + 2 * (self.patch_original_size // 2)
-            pred_mask = np.zeros((2, size + 1, s, s)).astype(np.float16)
             np.save(os.path.join(pred_dir, filename), pred_mask)
 
     def compute_img_size_and_num_patches(self):
@@ -494,6 +490,7 @@ class RibFracDataset(Dataset):
                                 slice.max(),
                                 slice.mean(),
                                 slice.std(),
+                                scan.shape
                             ]
                         )
             df = pd.DataFrame(
@@ -505,6 +502,7 @@ class RibFracDataset(Dataset):
                     "max",
                     "mean",
                     "std",
+                    "scan_shape"
                 ],
             )
             return df

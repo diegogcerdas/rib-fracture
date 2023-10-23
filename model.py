@@ -9,6 +9,8 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch import optim
 from tqdm import tqdm
+import pandas as pd
+from numpy.lib.format import open_memmap
 
 from unet3plus.loss import FocalLoss, IOUloss, MSSSIMloss
 from unet3plus.metrics import FPRmetric, IOUmetric
@@ -66,63 +68,90 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         return y_hat
 
     def update_pred_masks(self, batch):
-        patches, coords, filenames, slice_idx, pts = batch
+        patches, coords, filenames, pts, ctx, shapes, exps = batch
         coords = torch.stack(coords).transpose(0, 1)
         patch_original_size = pts[0].item()
         p = patch_original_size // 2
+        self.p = p
+        context_size = ctx[0].item()
+        self.exp_name = exps[0]
         resize = transforms.Resize(patch_original_size, antialias=True)
 
-        # TODO remove zero patches
-        # print('SHAPE1', patches.shape)
-        # empty_patches = (patches.sum(dim=(1, 2, 3)) == 0)
-        # patches = patches[~empty_patches]
-        # coords = coords[~empty_patches]
-        # non_empty_indxs = np.where(~empty_patches)[0]
-        # filenames = [filenames[i] for i in non_empty_indxs]
-        # slice_idx = [slice_idx[i] for i in non_empty_indxs]
-        # print('SHAPE2', patches.shape)
-
-        # forward of all
-        pred_patches = self.predict_mask(patches)
-
-        open_files = {}
-        for filename in filenames:
-            open_files[filename] = np.memmap(
-                filename,
-                dtype=np.float16,
-                mode="r+",
-                shape=...,  # TODO
-            )
-            print(open_files[filename].shape)
-
-        for pred_patch, coord, filename, slice_i in zip(
-            pred_patches, coords, filenames, slice_idx
-        ):
-            if coord[0] > self.cutoff_height:
-                continue
-            output = (
-                resize(pred_patch)
+        pred_patches = (
+                resize(self.predict_mask(patches))
                 .squeeze()
                 .detach()
                 .cpu()
                 .numpy()
             )
+
+        open_files = {}
+        for pred, patch, coord, filename, shape in zip(
+            pred_patches, patches, coords, filenames, shapes
+        ):
+            if torch.all(patch[context_size] < 0.05):
+                continue
+            if np.all(pred < 0.05):
+                continue
+            if coord[0] > self.cutoff_height:
+                continue
+            
             ix, iy = coord
+            side = shape[-1] + 2 * p
+            shape = (2, side, side)
 
             if filename not in open_files:
-                open_files[filename] = np.load(filename)
+                open_files[filename] = np.memmap(
+                    filename,
+                    dtype=np.float16,
+                    mode="w+",
+                    shape=shape,
+                )
+
             open_files[filename][
                 0,
-                slice_i,
                 ix - p : ix + p,
                 iy - p : iy + p,
-            ] += output
+            ] += pred
             open_files[filename][
                 1,
-                slice_i,
                 ix - p : ix + p,
                 iy - p : iy + p,
             ] += 1
+
+        for filename in open_files.keys():
+            open_files[filename].flush()
+
+    def postprocessing(self, mode):
+
+        pred_dir = os.path.join(self.data_root, f"{self.exp_name}-{mode}-pred-masks-final")
+        os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
+
+        df = pd.read_csv(os.path.join(self.data_root, f"{mode}_data_info.csv"))
+        df_f = df.drop_duplicates(subset=['img_filename'])[['img_filename', 'scan_shape']]
+
+        for filename_large, shape in tqdm(df_f.values, desc="Postprocessing"):
+            filename = os.path.basename(filename_large)
+            shape = tuple(map(int, shape[1:-1].split(', ')))
+            pred_filename = os.path.join(pred_dir, filename.replace("image.nii", "pred_mask.npy").replace(".gz", ""))
+            prediction = np.empty(shape)
+            df_sub = df[df.img_filename == filename_large]
+            for slice in df_sub['slice_idx'].values:
+                f = filename.replace("image.nii", f"pred_mask_{slice:03d}.npy").replace(".gz", "")
+                f = os.path.join(self.data_root, f"{self.exp_name}-{mode}-pred-masks", f)
+                p = self.p
+                arr_side = shape[-1] + 2 * p
+                arr_shape = (2, arr_side, arr_side)
+                arr = np.memmap(f, dtype=np.float16, mode='r', shape=arr_shape)
+                arr_tmp = open_memmap('tmp.npy', mode='w+', dtype=np.float16, shape=arr_shape)
+                arr_tmp[:] = arr[:]
+                arr_tmp[1][arr_tmp[1] == 0] = 1
+                arr_tmp = arr_tmp[0][p : - p, p : - p] / (arr_tmp[1][p : - p, p : - p])
+                arr_tmp = arr_tmp.T
+                prediction[slice] = arr_tmp
+                os.remove('tmp.npy')
+            np.save(pred_filename, prediction.astype(np.float16))
+
 
     def compute_eval(self, mode):
         thresholds = np.linspace(0, 1, 11)
@@ -188,8 +217,8 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
     def test_step(self, batch, batch_idx):
         self.update_pred_masks(batch)
 
-    def on_test_epoch_end(self) -> None:
-        self.compute_eval("test")
+    def on_test_end(self) -> None:
+        self.postprocessing('test')
 
 
 class UNetModule(BaseUnetModule):
