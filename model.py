@@ -127,9 +127,9 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
         df = pd.read_csv(os.path.join(self.data_root, f"{mode}_data_info.csv"))
-        df = df.drop_duplicates(subset=['img_filename'])[['img_filename', 'scan_shape', 'slice_idx']]
+        df_f = df.drop_duplicates(subset=['img_filename'])[['img_filename', 'scan_shape']]
 
-        for filename, shape in tqdm(df[['img_filename', 'scan_shape']].values, desc="Postprocessing"):
+        for filename, shape in tqdm(df_f.values, desc="Postprocessing"):
             filename = os.path.basename(filename)
             shape = tuple(map(int, shape[1:-1].split(', ')))
             pred_filename = os.path.join(pred_dir, filename.replace("image.nii", "pred_mask.npy").replace(".gz", ""))
