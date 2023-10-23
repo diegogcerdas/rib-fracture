@@ -210,7 +210,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         self.update_pred_masks(batch)
 
     def on_test_end(self) -> None:
-        self.postprocessing()
+        self.postprocessing('test')
 
 
 class UNetModule(BaseUnetModule):
