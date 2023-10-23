@@ -66,7 +66,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         return y_hat
 
     def update_pred_masks(self, batch):
-        patches, coords, filenames, slice_idx, pts, ctx, shapes = batch
+        patches, coords, filenames, pts, ctx, shapes = batch
         coords = torch.stack(coords).transpose(0, 1)
         patch_original_size = pts[0].item()
         p = patch_original_size // 2
@@ -85,8 +85,8 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         num = 0
 
         open_files = {}
-        for pred, patch, coord, filename, slice_i, shape in zip(
-            pred_patches, patches, coords, filenames, slice_idx, shapes
+        for pred, patch, coord, filename, shape in zip(
+            pred_patches, patches, coords, filenames, shapes
         ):
             if torch.all(patch[context_size] < 0.05):
                 continue
@@ -94,11 +94,8 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
                 continue
             
             ix, iy = coord
-            shape = list(shape)
-            shape.insert(0, 2)
-            shape[-2] += 2*p
-            shape[-1] += 2*p
-            shape = tuple(shape)
+            side = shape[-1] + 2 * p
+            shape = (2, side, side)
 
             if filename not in open_files:
                 open_files[filename] = np.memmap(
@@ -110,13 +107,11 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
 
             open_files[filename][
                 0,
-                slice_i,
                 ix - p : ix + p,
                 iy - p : iy + p,
             ] += pred
             open_files[filename][
                 1,
-                slice_i,
                 ix - p : ix + p,
                 iy - p : iy + p,
             ] += 1

@@ -186,7 +186,7 @@ class RibFracDataset(Dataset):
                 self.root_dir,
                 f"{self.partition}-pred-masks",
                 os.path.basename(filename)
-                .replace("image", "pred_mask")
+                .replace("image", "pred_mask_{:03d}".format(row["slice_idx"]))
                 .replace(".nii", ".npy")
                 .replace(".gz", ""),
             )
@@ -237,7 +237,6 @@ class RibFracDataset(Dataset):
                 img_patch,
                 coord,
                 npy_filename,
-                row["slice_idx"],
                 self.patch_original_size,
                 self.context_size,
                 scan_shape,
@@ -398,6 +397,22 @@ class RibFracDataset(Dataset):
         """Add a column with the index of the slice in the DataFrame."""
         self.df = self.df.reset_index(drop=True)
         self.df["df_index"] = np.arange(len(self.df))
+
+    def create_local_pred_masks(self):
+
+        pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
+        os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
+
+        for img_filename, slice in tqdm(self.df[["img_filename", "slice_idx"]], desc="Creating local prediction masks"):
+            filename = (
+                os.path.basename(img_filename)
+                .replace("image", "pred_mask_{:03d}".format(slice))
+                .replace(".nii", ".npy")
+                .replace(".gz", "")
+            )
+            s = self.img_size + 2 * (self.patch_original_size // 2)
+            pred_mask = np.zeros((2, s, s)).astype(np.float16)
+            np.save(os.path.join(pred_dir, filename), pred_mask)
 
     def create_local_pred_masks(self):
         sizes = self.df.sort_values(by=["img_filename", "slice_idx"])
