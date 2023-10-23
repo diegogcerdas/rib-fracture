@@ -403,7 +403,7 @@ class RibFracDataset(Dataset):
         pred_dir = os.path.join(self.root_dir, f"{self.partition}-pred-masks")
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
-        for img_filename, slice in tqdm(self.df[["img_filename", "slice_idx"]], desc="Creating local prediction masks"):
+        for img_filename, slice in tqdm(self.df[["img_filename", "slice_idx"]].values, desc="Creating local prediction masks"):
             filename = (
                 os.path.basename(img_filename)
                 .replace("image", "pred_mask_{:03d}".format(slice))
