@@ -73,9 +73,6 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         context_size = ctx[0].item()
         resize = transforms.Resize(patch_original_size, antialias=True)
 
-        nonzero = (patches[:, context_size].sum(dim=(-1, -2)) > 0.05)
-        patches = patches[nonzero]
-
         pred_patches = (
                 resize(self.predict_mask(patches))
                 .squeeze()
@@ -88,9 +85,11 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         num = 0
 
         open_files = {}
-        for pred, coord, filename, slice_i, shape in zip(
-            pred_patches, coords, filenames, slice_idx, shapes
+        for pred, patch, coord, filename, slice_i, shape in zip(
+            pred_patches, patches, coords, filenames, slice_idx, shapes
         ):
+            if torch.all(patch[context_size] < 0.05):
+                continue
             if coord[0] > self.cutoff_height:
                 continue
             
