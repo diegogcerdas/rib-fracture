@@ -121,6 +121,7 @@ if __name__ == "__main__":
         raise NotImplementedError(f"Unknown model {cfg_train.use_model}")
 
     model = model_module.load_from_checkpoint(cfg_test.ckpt, map_location=torch.device(cfg_test.device))
+    model.data_root = cfg_test.data_root
 
     # logger
     logger = []
