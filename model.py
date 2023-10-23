@@ -72,21 +72,23 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         p = patch_original_size // 2
         resize = transforms.Resize(patch_original_size, antialias=True)
 
-        open_files = {}
-        for patch, coord, filename, slice_i in zip(
-            patches, coords, filenames, slice_idx
-        ):
-            if torch.all(patch == 0):
-                continue
-            if coord[0] > self.cutoff_height:
-                continue
-            output = (
-                resize(self.predict_mask(patch.unsqueeze(0)))
+        pred_patches = (
+                resize(self.predict_mask(patches))
                 .squeeze()
                 .detach()
                 .cpu()
                 .numpy()
             )
+
+        open_files = {}
+        for pred, patch, coord, filename, slice_i in zip(
+            pred_patches, patches, coords, filenames, slice_idx
+        ):
+            if torch.all(patch < 0.05):
+                continue
+            if coord[0] > self.cutoff_height:
+                continue
+            
             ix, iy = coord
 
             if filename not in open_files:
@@ -96,7 +98,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
                 slice_i,
                 ix - p : ix + p,
                 iy - p : iy + p,
-            ] += output
+            ] += pred
             open_files[filename][
                 1,
                 slice_i,
