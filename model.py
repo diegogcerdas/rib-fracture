@@ -122,8 +122,9 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
             open_files[filename].flush()
 
     def postprocessing(self, mode):
-        for filename in os.listdir(f'{mode}-pred-masks'):
-            filename = os.path.join(f'{mode}-pred-masks', filename)
+        pred_dir = os.path.join(self.data_root, f"{mode}-pred-masks")
+        for filename in os.listdir(pred_dir):
+            filename = os.path.join(pred_dir, filename)
             arr = np.memmap(filename, dtype=np.float16, mode='r', shape=shape)
             arr_tmp = open_memmap('tmp.npy', mode='w+', dtype=np.float16, shape=shape)
             arr_tmp[:] = arr[:]
