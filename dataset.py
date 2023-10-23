@@ -231,7 +231,8 @@ class RibFracDataset(Dataset):
                 # append encodings in the channel dimension
                 img_patch = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
 
-            scan_shape = torch.tensor(list(map(int, row['scan_shape'][1:-1].split(', '))))
+            scan_shape = row['scan_shape']
+            scan_shape = torch.tensor(list(map(int, scan_shape[1:-1].split(', '))))
 
             return (
                 img_patch,
