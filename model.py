@@ -123,6 +123,8 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
 
     def postprocessing(self, mode):
         pred_dir = os.path.join(self.data_root, f"{mode}-pred-masks")
+        shape = (2, 576, 576) # TODO: avoid hardcode, but it's ok for now
+        
         for filename in os.listdir(pred_dir):
             filename = os.path.join(pred_dir, filename)
             arr = np.memmap(filename, dtype=np.float16, mode='r', shape=shape)
