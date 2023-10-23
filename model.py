@@ -129,12 +129,12 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         df = pd.read_csv(os.path.join(self.data_root, f"{mode}_data_info.csv"))
         df_f = df.drop_duplicates(subset=['img_filename'])[['img_filename', 'scan_shape']]
 
-        for filename, shape in tqdm(df_f.values, desc="Postprocessing"):
-            filename = os.path.basename(filename)
+        for filename_large, shape in tqdm(df_f.values, desc="Postprocessing"):
+            filename = os.path.basename(filename_large)
             shape = tuple(map(int, shape[1:-1].split(', ')))
             pred_filename = os.path.join(pred_dir, filename.replace("image.nii", "pred_mask.npy").replace(".gz", ""))
             prediction = np.empty(shape)
-            df_sub = df[df.img_filename == filename]
+            df_sub = df[df.img_filename == filename_large]
             for slice in df_sub['slice_idx'].values:
                 f = filename.replace("image.nii", f"pred_mask_{slice:03d}.npy").replace(".gz", "")
                 f = os.path.join(self.data_root, f"{mode}-pred-masks", f)
