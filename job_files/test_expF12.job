@@ -2,7 +2,7 @@
 
 #SBATCH --partition=gpu
 #SBATCH --gpus-per-node=1
-#SBATCH --job-name=rf_test12
+#SBATCH --job-name=rf_t12
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=18
 #SBATCH --time=60:00:00
@@ -17,8 +17,8 @@ source activate rib
 
 DATA_ROOT=/scratch-shared/$USER/data/
 
-CKPT=checkpoints/exp12/best.ckpt
+CKPT="checkpoints/expf12_final/epoch=28-step=80156.ckpt"
 
 cd ~/rib-fracture
 
-python eval.py --ckpt $CKPT --data-root $DATA_ROOT --download-data  --test-stride 32 --batch-size-test 32 --num-workers 18
+python eval.py --ckpt $CKPT --data-root $DATA_ROOT --download-data --test-stride 32 --batch-size-test 32 --num-workers 18 --set val

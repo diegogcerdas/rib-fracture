@@ -66,6 +66,7 @@ echo "[INFO] Training Set Part 1 - images DONE"
 #echo "[INFO] Test Set - images DONE"
 
 
+echo "[INFO] Unzipping .zip folders"
 mkdir -p tmp_train_images
 mkdir -p tmp_train_labels
 unzip download/ribfrac-train-images-1.zip -d tmp_train_images
@@ -88,5 +89,8 @@ rmdir tmp_train_*/Part*
 rmdir tmp_train_*
 rm -r download/  # optional, free space
 
+echo "[INFO] Unzipping .nii.gz files"
 gzip -d ribfrac-*-images/*.gz
 gzip -d ribfrac-*-labels/*.gz
+
+echo "[INFO] RIB-FRACTURE dataset downloaded at $(pwd)"

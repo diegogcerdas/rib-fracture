@@ -19,7 +19,7 @@ DATASET_ROOT=$1  # data/ribfrac/
 mkdir -p $DATASET_ROOT
 cd $DATASET_ROOT
 
-echo "[INFO] Downloading RIB-FRACTURE dataset at $(pwd)"
+echo "[INFO] Downloading RIB-FRACTURE TEST dataset at $(pwd)"
 
 mkdir -p download
 
@@ -27,6 +27,10 @@ mkdir -p download
 wget -c "https://zenodo.org/record/3993380/files/ribfrac-test-images.zip?download=1" -O "download/ribfrac-test-images.zip"
 echo "[INFO] Test Set - images DONE"
 
+echo "[INFO] Unzipping .zip folders"
 unzip download/ribfrac-test-images.zip -d .
 
+echo "[INFO] Unzipping .nii.gz files"
 gzip -d ribfrac-*-images/*.gz
+
+echo "[INFO] RIB-FRACTURE TEST dataset downloaded at $(pwd)"
