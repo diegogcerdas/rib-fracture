@@ -40,9 +40,13 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         self.use_msssim_loss = use_msssim_loss
         self.cutoff_height = cutoff_height
         self.log_every_step = log_every_step
+        self.test_partition = ...
 
         self.network = ...  # UNet_3Plus(n_channels)
         self.loss = ...  # F.binary_cross_entropy_with_logits
+
+    def set_test_partition(self, partition):
+        self.test_partition = partition
 
     def forward(self, x):
         return self.network(x)
@@ -122,12 +126,12 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
         for filename in open_files.keys():
             open_files[filename].flush()
 
-    def postprocessing(self, mode):
+    def postprocessing(self, partition):
 
-        pred_dir = os.path.join(self.data_root, f"{self.exp_name}-{mode}-pred-masks-final")
+        pred_dir = os.path.join(self.data_root, f"{self.exp_name}-{partition}-pred-masks-final")
         os.mkdir(pred_dir) if not os.path.exists(pred_dir) else None
 
-        df = pd.read_csv(os.path.join(self.data_root, f"{mode}_data_info.csv"))
+        df = pd.read_csv(os.path.join(self.data_root, f"{partition}_data_info_test.csv"))
         df_f = df.drop_duplicates(subset=['img_filename'])[['img_filename', 'scan_shape']]
 
         for filename_large, shape in tqdm(df_f.values, desc="Postprocessing"):
@@ -138,7 +142,7 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
             df_sub = df[df.img_filename == filename_large]
             for slice in df_sub['slice_idx'].values:
                 f = filename.replace("image.nii", f"pred_mask_{slice:03d}.npy").replace(".gz", "")
-                f = os.path.join(self.data_root, f"{self.exp_name}-{mode}-pred-masks", f)
+                f = os.path.join(self.data_root, f"{self.exp_name}-{partition}-pred-masks", f)
                 p = self.p
                 arr_side = shape[-1] + 2 * p
                 arr_shape = (2, arr_side, arr_side)
@@ -217,8 +221,12 @@ class BaseUnetModule(pl.LightningModule, abc.ABC):
     def test_step(self, batch, batch_idx):
         self.update_pred_masks(batch)
 
+    def on_test_start(self) -> None:
+        assert self.test_partition is not ..., "test_partition not set"
+        return super().on_test_start()
+
     def on_test_end(self) -> None:
-        self.postprocessing('test')
+        self.postprocessing(self.test_partition)
 
 
 class UNetModule(BaseUnetModule):

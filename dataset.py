@@ -26,6 +26,7 @@ class RibFracDataset(Dataset):
         data_mean: float,
         data_std: float,
         test_stride: int,
+        mode: str = "train",
         force_data_info: bool = False,
         debug: bool = False,
         use_positional_encoding: bool = False,
@@ -33,6 +34,7 @@ class RibFracDataset(Dataset):
     ):
         super().__init__()
         assert partition in ["train", "val", "test"]
+        assert mode in ["train", "test"]
         self.root_dir = root_dir
         self.partition = partition
         self.context_size = context_size
@@ -48,23 +50,27 @@ class RibFracDataset(Dataset):
         self.data_mean = data_mean
         self.data_std = data_std
         self.exp_name = exp_name
+        self.mode = mode
 
         # Compute a DataFrame of all available slices
-        self.data_info_path = os.path.join(root_dir, f"{partition}_data_info.csv")
-        if not force_data_info and os.path.exists(self.data_info_path):
-            self.df = pd.read_csv(self.data_info_path)
-        else:
-            if partition == "test":
-                self.df = self.create_data_info_csv_test()
-            else:
+        if mode == "train":
+            self.data_info_path = os.path.join(root_dir, f"{partition}_data_info.csv")
+        else:  # mode == "test"
+            self.data_info_path = os.path.join(root_dir, f"{partition}_data_info_test.csv")
+
+        if force_data_info or not os.path.exists(self.data_info_path):
+            if mode == "train":
                 self.df = self.create_data_info_csv()
+            else:  # mode == "test"
+                self.df = self.create_data_info_csv_test()
+        self.df = pd.read_csv(self.data_info_path)
 
         # Clean the DataFrame and prepare for sampling
-        if partition == "train" or partition == "val":
+        if mode == "train":
             self.drop_slices_without_context()
             self.repeat_slices_with_fracture()
             self.add_df_index()
-        else:
+        else:  # mode == "test"
             self.img_size, self.num_patches = self.compute_img_size_and_num_patches()
             self.create_local_pred_masks()
             self.drop_slices_without_context()
@@ -72,7 +78,7 @@ class RibFracDataset(Dataset):
         # Set up transforms
         self.normalize = transforms.Normalize(mean=data_mean, std=data_std)
 
-        if partition == "train":
+        if mode == "train":
             self.transform = transforms.Compose(
                 [
                     transforms.Resize(patch_final_size, antialias=True),
@@ -90,7 +96,7 @@ class RibFracDataset(Dataset):
 
     def __getitem__(self, idx):
         # If training, create a random patch from the image and mask slices
-        if self.partition == "train" or self.partition == "val":
+        if self.mode == 'train':
             row = self.df.iloc[idx]
             # Load image and mask slices
             filename = os.path.join(self.root_dir, row["img_filename"])
@@ -159,8 +165,8 @@ class RibFracDataset(Dataset):
 
             return img_patch, mask_patch
 
-        # If validation or test, create patches from a predetermined coordinate
-        else:
+        # If test, create patches from a predetermined coordinate
+        else:  # self.mode == 'test'
             # Divide index into row and patch indices
             row_idx = int(idx // self.num_patches)  # num of row of the df (each row is a slice)
             patch_idx = int(idx - (row_idx * self.num_patches))  # num of patch in slice
@@ -233,8 +239,9 @@ class RibFracDataset(Dataset):
                 # append encodings in the channel dimension
                 img_patch = torch.cat([img_patch, enc_x, enc_y, enc_z], dim=0)
 
-            scan_shape = row['scan_shape']
-            scan_shape = torch.tensor(list(map(int, scan_shape[1:-1].split(', '))))
+            scan_shape = row['scan_shape']  # string "(325, 512, 512)"
+            scan_shape = ast.literal_eval(scan_shape)  # tuple (325, 512, 512)
+            scan_shape = torch.tensor(scan_shape)  # tensor torch.tensor([325, 512, 512])
 
             return (
                 img_patch,

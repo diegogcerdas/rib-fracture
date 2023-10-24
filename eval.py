@@ -36,6 +36,13 @@ if __name__ == "__main__":
         default=False,
         help="Download data in specified data directory if not present.",
     )
+    parser.add_argument(
+        "--set", 
+        type=str, 
+        default="test", 
+        help="dataset to eval: 'val' or 'test'",
+        choices=["val", "test"],
+    )
 
     # Run Parameters
     parser.add_argument(
@@ -84,7 +91,8 @@ if __name__ == "__main__":
     # dataloader
     test_set = RibFracDataset(
         root_dir=cfg_test.data_root,
-        partition="test",
+        partition=cfg_test.set,
+        mode="test",
         context_size=cfg_train.context_size,
         patch_original_size=cfg_train.patch_original_size,
         patch_final_size=cfg_train.patch_final_size,
@@ -123,6 +131,7 @@ if __name__ == "__main__":
 
     model = model_module.load_from_checkpoint(cfg_test.ckpt, map_location=torch.device(cfg_test.device))
     model.data_root = cfg_test.data_root
+    model.set_test_partition(cfg_test.set)
 
     # logger
     logger = []
@@ -144,4 +153,5 @@ if __name__ == "__main__":
         devices=1,
         logger=logger,
     )
+    print("Testing on set '{}'...".format(cfg_test.set))
     trainer.test(model, test_loader)

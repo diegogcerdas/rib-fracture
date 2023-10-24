@@ -55,6 +55,7 @@ class ConfigTest:
     ckpt: str
     data_root: str
     download_data: bool
+    set: str
 
     # run
     test_stride: int

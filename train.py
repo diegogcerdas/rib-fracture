@@ -168,6 +168,7 @@ if __name__ == "__main__":
     train_set = RibFracDataset(
         root_dir=cfg.data_root,
         partition="train",
+        mode="train",
         context_size=cfg.context_size,
         patch_original_size=cfg.patch_original_size,
         patch_final_size=cfg.patch_final_size,
@@ -194,6 +195,7 @@ if __name__ == "__main__":
     val_set = RibFracDataset(
         root_dir=cfg.data_root,
         partition="val",
+        mode="train",
         context_size=cfg.context_size,
         patch_original_size=cfg.patch_original_size,
         patch_final_size=cfg.patch_final_size,
