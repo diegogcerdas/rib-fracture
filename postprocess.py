@@ -14,8 +14,7 @@ import numpy as np
 import cc3d
 import pandas as pd
 import nibabel as nib
-import matplotlib.pyplot as plt
-    
+from tqdm import tqdm    
 
 
 def postprocessing(src: str, dst: str, set: str, threshold: float, connec: int = 6, min_vol: int = -1):
@@ -80,7 +79,7 @@ def postprocessing(src: str, dst: str, set: str, threshold: float, connec: int =
     os.makedirs(dst, exist_ok=True)
     data = []
 
-    for filepath in filelist:
+    for filepath in tqdm(filelist, desc="Postprocessing"):
 
         # 0. Load
         filename = os.path.basename(filepath)
