@@ -58,7 +58,7 @@ def postprocessing(src: str, dst: str, set: str, threshold: float, connec: int =
         6. Generate "ribfrac-<set>-pred.csv".
 
     Following the format from https://github.com/M3DV/RibFrac-Challenge#evaluation, the output files will contain the following information:
-        - "RibFrac<scan-number>.nii.gz": scan of the same size as the input array ("RibFrac<scan-number>.npy") containing the labels (label_id) of the connected components.
+        - "RibFrac<scan-number>.nii.gz": scan of the same size as the input array ("RibFrac<scan-number>-pred_mask.npy") containing the labels (label_id) of the connected components.
         - "ribfrac-<set>-pred.csv": csv file with the following columns:
             - "public_id": scan number, e.g. "RibFrac400".
             - "label_id": integer label of the connected component, corresponding to the label in the "RibFrac<scan-number>.nii.gz" file.

@@ -1,0 +1,27 @@
+#!/bin/bash
+
+#SBATCH --partition=gpu
+#SBATCH --gpus-per-node=1
+#SBATCH --job-name=postpro
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=18
+#SBATCH --time=10:00:00
+#SBATCH --mem=120000M
+#SBATCH --output=slurm_output_%A.out
+
+module purge
+module load 2022
+module load Anaconda3/2022.05
+
+source activate rib
+
+EXP=eval_expF02
+SET=val
+
+DATA_ROOT=/scratch-shared/$USER/data/
+SRC=$DATA_ROOT/$EXP-$SET-pred-masks-final
+DST=$DATA_ROOT/$EXP-$SET-submission
+
+cd ~/rib-fracture
+
+python postprocess.py --src $SRC --dst $DST --set $SET
