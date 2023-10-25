@@ -12,3 +12,4 @@ opencv-python
 seaborn
 imageio
 scikit-image
+connected-components-3d
