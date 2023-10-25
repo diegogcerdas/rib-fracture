@@ -76,13 +76,24 @@ def postprocessing(src: str, dst: str, set: str, threshold: float, connec: int =
 
     # dst
     os.makedirs(dst, exist_ok=True)
-    data = []
+
+    df = pd.DataFrame(columns=["public_id", "label_id", "confidence", "label_code"])
+
+    csv_filename = os.path.join(dst, f"ribfrac-{set}-pred.csv")
+    if os.path.exists(csv_filename):
+        df = pd.read_csv(csv_filename)
 
     for filepath in tqdm(filelist, desc="Postprocessing"):
 
-        # 0. Load
         filename = os.path.basename(filepath)
         public_id = re.search(r"(RibFrac(\d+))-pred_mask.npy", filename).group(1)
+
+        save_filename = os.path.join(dst, f"{public_id}.nii.gz")
+
+        if os.path.exists(save_filename) and public_id in df["public_id"].unique():
+            continue
+
+        # 0. Load
 
         pred_mask = np.load(filepath)  # (z, x, y)
         pred_mask = np.transpose(pred_mask, (1, 2, 0))  # (x, y, z)
@@ -103,7 +114,12 @@ def postprocessing(src: str, dst: str, set: str, threshold: float, connec: int =
 
         # background
         confidence = 1 - np.mean(pred_mask[labels_out == 0])
-        data.append([public_id, 0, confidence, 0])
+        df.loc[len(df)] = {
+                "public_id": public_id,
+                "label_id": 0,
+                "confidence": confidence,
+                "label_code": 0,
+            }
 
         n = 0
         for label, image in cc3d.each(labels_out, binary=True, in_place=True):
@@ -117,21 +133,20 @@ def postprocessing(src: str, dst: str, set: str, threshold: float, connec: int =
                 # 4. Confidence
                 confidence = np.mean(pred_mask[image])
 
-                data.append([public_id, n, confidence, 1])
+                df.loc[len(df)] = {
+                        "public_id": public_id,
+                        "label_id": n,
+                        "confidence": confidence,
+                        "label_code": 1,
+                    }
 
         n += 1  # background
         
         # 5. Save
         labels_out = labels_out.astype(np.uint8)
         labels_out = nib.Nifti1Image(labels_out, np.eye(4))
-        nib.save(labels_out, os.path.join(dst, f"{public_id}.nii.gz"))
-
-    # 6. Generate csv
-    df = pd.DataFrame(
-        data=data,
-        columns=["public_id", "label_id", "confidence", "label_code"],
-    )
-    df.to_csv(os.path.join(dst, f"ribfrac-{set}-pred.csv"), index=False)
+        df.to_csv(csv_filename, index=False)
+        nib.save(labels_out, save_filename)
 
 
 if __name__ == "__main__":
